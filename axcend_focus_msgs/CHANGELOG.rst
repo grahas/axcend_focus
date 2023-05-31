@@ -2,8 +2,8 @@
 Changelog for package axcend_focus_msgs
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.0.2 (2023-05-31)
+------------------
 * Update message definitions
 * Contributors: Graham
 
