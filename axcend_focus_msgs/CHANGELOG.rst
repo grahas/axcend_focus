@@ -2,6 +2,11 @@
 Changelog for package axcend_focus_msgs
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* add std_msg
+* Contributors: Graham
+
 0.0.2 (2023-05-31)
 ------------------
 * Update message definitions
