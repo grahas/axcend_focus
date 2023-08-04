@@ -8,7 +8,9 @@ rm -r build install log
 
 Build package
 
-colcon build --packages-select axcend_focus_msgs
+colcon build --packages-select axcend_focus_custom_interfaces
+
+update changelog
 
 catkin_generate_changelog
 
@@ -22,5 +24,6 @@ https://github.com/grahas/axcend_focus.git
 
 scp /home/axcend/OSTL-k/build-openstlinuxweston-stm32mp1/tmp-glibc/deploy/deb/cortexa7t2hf-neon-vfpv4/axcend-focus-msgs_0.0.3-1-r0.0_armhf.deb root@192.168.1.118:/tmp
 
-ros2 pkg create axcend_focus_actions --build-type ament_cmake --dependencies action_msgs std_msgs rosidl_default_generators
+In VM
 
+superflore-gen-oe-recipes --dry-run --ros-distro foxy --only axcend_focus
