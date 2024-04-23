@@ -2,42 +2,39 @@
 
 ## Workflow for building ros2 package and getting them on the board
 
-## Setup
+### Setup
 
 Open the Ubuntu WSL VM and build server VM
 
-### Clean workspace
+### Clean Workspace
 
 1. cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws
 2. rm -r build install log
 
-### Build package
+### Build Package
 
 1. colcon build --packages-select axcend_focus_custom_interfaces
+2. colcon build --packages-select axcend_focus_front_panel_button
 
 ### Update Changelog
 
-catkin_generate_changelog
-
-catkin_prepare_release
-
-bloom-release --rosdistro foxy axcend_focus
-
-https://github.com/grahas/axcend_focus-release.git
+1. catkin_generate_changelog
+2. catkin_prepare_release
+3. bloom-release --rosdistro foxy axcend_focus
+4. https://github.com/grahas/axcend_focus-release.git
 
 https://github.com/grahas/axcend_focus.git
 
-### Rebuild package index
+### Rebuild Package Index
 
 In build-server VM ->
 
 1. export ROSDISTRO_INDEX_URL=file:///home/axcend/Documents/GitHub/rosdistro/index-v4.yaml
 2. update the version number in distribution.yaml
 3. cd ~/Documents/GitHub/rosdistro/foxy
-4. rm foxy-cache.yaml && rm foxy-cache.yaml.gz
-5. rosdistro_build_cache file:///home/axcend/Documents/GitHub/rosdistro/index-v4.yaml foxy
+4. rosdistro_build_cache file:///home/axcend/Documents/GitHub/rosdistro/index-v4.yaml foxy
 
-### Generate the recipe
+### Generate the Recipe
 
 In build-server VM ->
 
@@ -48,14 +45,39 @@ In build-server VM ->
 1. rm -r /home/axcend/OSTL-k/layers/meta-ros/meta-ros2-foxy/generated-recipes/axcend-focus && cp -r /home/axcend/Documents/GitHub/test-meta-ros/meta-ros2-foxy/generated-recipes/axcend-focus /home/axcend/OSTL-k/layers/meta-ros/meta-ros2-foxy/generated-recipes/axcend-focus
 2. update bbappend version number
 
-### Bake changes
+### Bake Changes
 
-bitbake axcend-focus-custom-interfaces
+1. bitbake axcend-focus-custom-interfaces
 
 ### Copy Changes to Board
 
-scp /home/axcend/OSTL-k/build-openstlinuxweston-stm32mp1/tmp-glibc/deploy/deb/cortexa7t2hf-neon-vfpv4/axcend-focus-custom-interfaces_3.0.7-1-r0.0_armhf.deb root@192.168.1.188:/tmp
+1. Update version number if following command
+2. scp /home/axcend/OSTL-k/build-openstlinuxweston-stm32mp1/tmp-glibc/deploy/deb/cortexa7t2hf-neon-vfpv4/axcend-focus-custom-interfaces_3.0.8-1-r0.0_armhf.deb root@192.168.1.188:/tmp
 
 ### Install Changes
 
-dpkg -i /tmp/axcend-focus-custom-interfaces_3.0.7-1-r0.0_armhf.deb
+1. Update version number in following command
+2. dpkg -i /tmp/axcend-focus-custom-interfaces_3.0.8-1-r0.0_armhf.deb
+
+## Transfer Bridge to Board
+
+### Start
+
+1. cd /mnt/c/Users/gupyf/Documents/GitHub/firmware_octavo/OSD32MP157C-512M-BAA_MinimalConfig/CA7/Bridge
+2. scp *.tcl root@192.168.1.188:/axcend/bridge/
+   
+## Create a new package
+cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus
+Examples:
+the axcend_focus prefix is for package organization on superflore
+
+ros2 pkg create --build-type ament_python --node-name firmware_bridge axcend_focus_ros2_firmware_bridge
+ros2 pkg create --build-type ament_python --node-name front_panel_button_controller axcend_focus_front_panel_button
+ros2 pkg create --build-type ament_python --node-name legacy_compatibility_interface axcend_focus_legacy_compatibility_layer
+
+## Set the URL for superflore build
+git remote set-url origin https://github.com/grahas/axcend_focus
+
+Set for gitlab
+git remote set-url origin https://gitlab.com/axcend/v3-hw-and-sw/axcend_focus
+
