@@ -71,9 +71,12 @@ cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus
 Examples:
 the axcend_focus prefix is for package organization on superflore
 
-ros2 pkg create --build-type ament_python --node-name firmware_bridge axcend_focus_ros2_firmware_bridge
+ros2 pkg create --build-type ament_cmake --node-name firmware_bridge axcend_focus_ros2_firmware_bridge_cpp
 ros2 pkg create --build-type ament_python --node-name front_panel_button_controller axcend_focus_front_panel_button
 ros2 pkg create --build-type ament_python --node-name legacy_compatibility_interface axcend_focus_legacy_compatibility_layer
+
+ros2 pkg create --build-type ament_cmake --node-name my_node my_package
+
 
 ## Set the URL for superflore build
 git remote set-url origin https://github.com/grahas/axcend_focus
@@ -81,3 +84,11 @@ git remote set-url origin https://github.com/grahas/axcend_focus
 Set for gitlab
 git remote set-url origin https://gitlab.com/axcend/v3-hw-and-sw/axcend_focus
 
+# Map network drive to board 
+\\sshfs\root@192.168.7.1\..\..\
+password is root
+
+rsync -avz --exclude '.git/' /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus/axcend_focus_ros2_firmware_bridge root@192.168.7.1:/axcend/axcend_focus_ros2_firmware_bridge/
+
+From WSL ros2 environment 
+colcon test --packages-select axcend_focus_legacy_compatibility_layer --output-on-failure
