@@ -88,35 +88,6 @@ def valves():
     yield valves_homed
 
 
-# @pytest.mark.skip(reason="Not interesting right now")
-# def test_packet_encoding(packet_transcoder):
-#     """
-#     Verify that the packet encoding library is working correctly
-#     """
-#     # Create a packet
-#     packet = Packet()
-
-#     # Convert characters to uint8_t
-#     packet_ID = ctypes.c_uint8(ord("C"))
-#     type_ID = ctypes.c_uint8(ord("Q"))
-
-#     # Call packetEncode_16
-#     packet_transcoder.packetEncode_16(
-#         packet_ID, type_ID, ctypes.byref(packet), ctypes.c_uint16(0)
-#     )
-
-#     # Serialize the packet into a hex encoded string
-#     packet_string = PROTO_PREFIX
-#     packet_string += bytes(packet.raw).hex().upper().encode()
-#     print(bytes(packet.raw).hex())
-#     print(packet_string.decode())
-
-#     # Check the encoding
-#     assert (
-#         packet_string == b"proto1 4351000000000000000000000000000A"
-#     ), "Packet not encoded correctly"
-
-
 # # @pytest.mark.skip(reason="Not interesting right now")
 # def test_heart_beat(serial_port):
 #     """

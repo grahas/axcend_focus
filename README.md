@@ -1,10 +1,18 @@
 # Repository for ROS2 and Axcend Focus LC
 
+# VS code addons
+
+Use color blocks to see sections of related code
+
 ## Workflow for building ros2 package and getting them on the board
 
 ### Setup
 
 Open the Ubuntu WSL VM and build server VM
+
+source /opt/ros/humble/setup.bash
+
+source install/local_setup.bash
 
 ### Clean Workspace
 
@@ -65,8 +73,9 @@ In build-server VM ->
 
 1. cd /mnt/c/Users/gupyf/Documents/GitHub/firmware_octavo/OSD32MP157C-512M-BAA_MinimalConfig/CA7/Bridge
 2. scp *.tcl root@192.168.1.188:/axcend/bridge/
-   
+
 ## Create a new package
+
 cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus
 Examples:
 the axcend_focus prefix is for package organization on superflore
@@ -77,18 +86,35 @@ ros2 pkg create --build-type ament_python --node-name legacy_compatibility_inter
 
 ros2 pkg create --build-type ament_cmake --node-name my_node my_package
 
-
 ## Set the URL for superflore build
+
 git remote set-url origin https://github.com/grahas/axcend_focus
 
 Set for gitlab
 git remote set-url origin https://gitlab.com/axcend/v3-hw-and-sw/axcend_focus
 
-# Map network drive to board 
-\\sshfs\root@192.168.7.1\..\..\
+# Map network drive to board
+
+\\sshfs\root@192.168.7.1\..\..
 password is root
 
 rsync -avz --exclude '.git/' /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus/axcend_focus_ros2_firmware_bridge root@192.168.7.1:/axcend/axcend_focus_ros2_firmware_bridge/
 
-From WSL ros2 environment 
+From WSL ros2 environment
 colcon test --packages-select axcend_focus_legacy_compatibility_layer --output-on-failure
+
+# Install package dependencies
+
+After adding them to the package.xml file
+In WSL ROS2 environment
+rosdep update
+rosdep install --from-paths src --ignore-src --rosdistro humble -y
+
+# Test a specific command
+
+test the legacy_compatibility_layer: colcon test --packages-select axcend_focus_legacy_compatibility_layer --event-handlers console_direct+
+
+test the packet transcoder: colcon test --packages-select axcend_focus_ros2_firmware_bridge --event-handlers console_direct+
+
+To test without rebuilding in ROS2 you can  use
+colcon build --symlink-install
