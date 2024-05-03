@@ -1,0 +1,3 @@
+[console_scripts]
+firmware_bridge = axcend_focus_ros2_firmware_bridge.firmware_bridge:main
+

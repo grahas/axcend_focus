@@ -118,3 +118,8 @@ test the packet transcoder: colcon test --packages-select axcend_focus_ros2_firm
 
 To test without rebuilding in ROS2 you can  use
 colcon build --symlink-install
+
+# Build a specific package
+colcon build --packages-select axcend_focus_ros2_firmware_bridge 
+
+colcon build --symlink-install

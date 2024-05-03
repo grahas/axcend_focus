@@ -1,19 +1,18 @@
-"""
-File provides encoding and decoding of packets sent to and from the firmware
-"""
+"""File provides encoding and decoding of packets sent to and from the firmware."""
 
 import ctypes
 from enum import Enum
 import os
 import json
-
+import platform
+import pkg_resources
 
 PACKET_MAX_LENGTH = 16
 PROTO_PREFIX = b"proto1 "
 
 
 class DataAcquisitionState(Enum):
-    """Enum is responsible for defining the data acquisition state"""
+    """Enum is responsible for defining the data acquisition state."""
 
     DISABLED = 0
     CARTRIDGE_ONLY = 1
@@ -120,13 +119,28 @@ class CartridgeMemory_t(ctypes.Union):
 
 
 class PacketTranscoder:
-    """Class that gives the ability to encode and decode packets"""
+    """Class that gives the ability to encode and decode packets."""
 
-    def __init__(self, lib_path: str):
-        self.packet_transcoder = self.load_packet_transcoder(lib_path)
+    def __init__(self):
+
+        # Load the packet transcoder shared library
+        if platform.system() == "Windows":
+            target_library = "packets.dll"
+        elif platform.machine() == "armv7l":  # armhf
+            target_library = "packets_armv7l.so"
+        elif platform.machine() == "x86_64":  # x64
+            target_library = "packets_x86_64.so"
+        else:
+            raise NotImplementedError(f"Platform '{platform.system()}' is not supported.")
+
+        library_path = pkg_resources.resource_filename('axcend_focus_ros2_firmware_bridge', target_library)
+
+        self.packet_transcoder = self.load_packet_transcoder(library_path)
 
     def load_packet_transcoder(self, lib_path: str) -> ctypes.CDLL:
         """
+        Load a packet transcoder shared library.
+
         Load the packet encoding / decoding library and define argument types
         and return types for various functions within the library.
         """
@@ -192,7 +206,7 @@ class PacketTranscoder:
         return packet_transcoder
 
     def create_heartbeat_packet(self) -> str:
-        """Return the encoded heart beat packet"""
+        """Return the encoded heart beat packet."""
         packet = Packet()
 
         # Make an OK packet
@@ -205,7 +219,7 @@ class PacketTranscoder:
         return packet_string
 
     def create_acknowledgement_packet(self) -> str:
-        """Create a default acknowledgement packet hex encoded string"""
+        """Create a default acknowledgement packet hex encoded string."""
         ACK_VALUE = b"OK"
 
         packet = Packet()
@@ -223,9 +237,7 @@ class PacketTranscoder:
         return packet_string
 
     def create_system_parameters_packet(self) -> str:
-        """
-        Make the system parameters packet
-        """
+        """Make the system parameters packet."""
         # Variables
         system_parameters_file_path = os.environ.get("SYS_PARAMS_FILE")
 
@@ -266,11 +278,14 @@ class PacketTranscoder:
         return packet_string
 
     def decode_packet(self, packet_string: str) -> list:
-        """Decode a hex string packet from the firmware and return the data as a dictionary"""
+        """Decode a hex string packet from the firmware and return the data as a dictionary."""
         # Convert the hex encoded data to byte array
         prefix, data = packet_string.split(" ", 1)
 
         data = bytes.fromhex(data)
+
+        # Not sure yet what type of packet to assign yet
+        packet = None
 
         # Get the packet type
         packet_type = chr(data[0]) + chr(data[1])
@@ -298,12 +313,15 @@ class PacketTranscoder:
             # Copy the bytes into the packet
             ctypes.memmove(ctypes.byref(packet.raw), data, len(data))
 
+        elif prefix == "SysParams":
+            pass
+
         return [prefix, packet_type, packet]
 
     def create_valve_rotate_packet(
         self, solvent_valve_position: int, injection_valve_position: int
     ) -> str:
-        """Create a rotate valve packet"""
+        """Create a rotate valve packet."""
         packet = Packet()
 
         # Encode the packet
@@ -324,7 +342,7 @@ class PacketTranscoder:
         return packet_string
 
     def create_cartridge_memory_write_packet(self, cartridge_data: dict) -> str:
-        """Create a cartridge memory write packet"""
+        """Create a cartridge memory write packet."""
         packet = CartridgeMemory_t()
 
         # Set the fields of the union according to the data in the JSON object
@@ -385,7 +403,7 @@ class PacketTranscoder:
         return packet_string
 
     def parse_values_oven_status_packet(self, packet: Packet) -> list:
-        """Parse the values from the oven packet"""
+        """Parse the values from the oven packet."""
         # Extract the data from the packet
         sequence_number = ctypes.c_uint32(0)
         oven_state = ctypes.c_uint8(0)
@@ -404,7 +422,7 @@ class PacketTranscoder:
         return [sequence_number, oven_state, temperature_as_float, power_output]
 
     def create_data_acquisition_state_packet(self, state: DataAcquisitionState) -> str:
-        """Create a data acquisition state packet"""
+        """Create a data acquisition state packet."""
         # Create a blank packet
         packet = Packet()
 

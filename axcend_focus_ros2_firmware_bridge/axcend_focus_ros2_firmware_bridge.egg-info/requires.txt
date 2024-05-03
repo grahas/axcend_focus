@@ -1,0 +1,5 @@
+pyserial
+setuptools
+
+[debug]
+debugpy

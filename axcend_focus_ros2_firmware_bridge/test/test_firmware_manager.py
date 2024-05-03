@@ -1,6 +1,9 @@
-import debugpy
-debugpy.listen(('0.0.0.0', 5678))
-debugpy.wait_for_client() 
+# import debugpy
+# debugpy.listen(('0.0.0.0', 5678))
+# debugpy.wait_for_client()
+
+from unittest.mock import Mock
+import unittest
 
 import csv
 import pytest
@@ -11,47 +14,101 @@ import itertools
 from collections import deque
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import String
 from sensor_msgs.msg import Temperature
 from threading import Thread
+from serial import SerialTimeoutException
 
-from axcend_focus.axcend_focus_ros2_firmware_bridge.axcend_focus_ros2_firmware_bridge.firmware_manager import FirmwareNode, DataAcquisitionState
+from axcend_focus_ros2_firmware_bridge.firmware_manager import (
+    FirmwareNode,
+    DataAcquisitionState,
+)
 from axcend_focus_custom_interfaces.srv import CartridgeMemoryWrite
+import axcend_focus_ros2_firmware_bridge.packet_definitions as packet_definitions
+
+# Get the current directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Define the relative path to the JSON file
+relative_path = "dummy_system_parameter_file.json"
+
+# Join the current directory with the relative path
+json_file_path = os.path.join(current_dir, relative_path)
+
+# Set the SYS_PARAMS_FILE environment variable
+os.environ["SYS_PARAMS_FILE"] = json_file_path
+
+# Create an instance of the PacketTranscoder
+packet_transcoder = packet_definitions.PacketTranscoder()
 
 
 class ExampleNode(Node):
-    """
-    Node is for use of the firmware test script
-    """
+    """Node is for use of the firmware test script."""
+
     def __init__(self):
-        super().__init__('test_firmware_node')
+        super().__init__("test_firmware_node")
         self.subscription = self.create_subscription(
-            Temperature,
-            'cartridge_temperature',
-            self.listener_callback,
-            10)
-        self.subscription # prevent unused variable warning
+            Temperature, "cartridge_temperature", self.listener_callback, 10
+        )
         self.msg_data = None
         self.cartridge_temperature = deque(maxlen=10)
 
         # Create a client to access the write cartridge memory service
         self.cartridge_memory_write_client = self.create_client(
-            CartridgeMemoryWrite, 'cartridge_memory_write')
+            CartridgeMemoryWrite, "cartridge_memory_write"
+        )
 
+        # Create a publisher to write to the firmware_UART_write string topic
+        self.firmware_UART_write_publisher = self.create_publisher(
+            String, "firmware_UART_write", 10
+        )
 
     def listener_callback(self, msg):
+        """Callback function for the cartridge temperature subscriber."""
         self.cartridge_temperature.append(msg.temperature)
 
 
 @pytest.fixture(scope="module")
-def nodes():
+def mock_serial_port():
+    """Mock the serial port for testing."""
+    mock_port = Mock()
+
+    mock_port.write_data = []
+    mock_port.read_data = []
+    mock_port.start_time = None
+
+    def mock_readline():
+        if not mock_port.read_data:
+            if mock_port.start_time is None:
+                mock_port.start_time = time.time()
+            elif time.time() - mock_port.start_time > 0.5:
+                raise SerialTimeoutException
+            return b''
+        else:
+            mock_port.start_time = None
+            return mock_port.read_data.pop(0)
+        
+    def mock_write(data):
+        mock_port.write_data.append(data)
+
+    mock_port.readline = mock_readline
+    mock_port.write = mock_write
+    mock_port.close = Mock()  # Add a close method
+    mock_port.add_to_read_buffer = lambda data: mock_port.read_data.append(data)
+
+    yield mock_port
+
+@pytest.fixture(scope="module")
+def nodes(mock_serial_port):
+    """Create the firmware node and the test node."""
     # Start ROS 2 client library
     rclpy.init()
 
     # Create a multi-threaded executor
     executor = rclpy.executors.MultiThreadedExecutor()
-    
+
     # Add nodes to executor
-    firmware_node = FirmwareNode()
+    firmware_node = FirmwareNode(serial_port=mock_serial_port)
     test_node = ExampleNode()
     executor.add_node(firmware_node)
     executor.add_node(test_node)
@@ -59,49 +116,69 @@ def nodes():
     # Spin in a separate thread
     executor_thread = Thread(target=executor.spin, daemon=True)
     executor_thread.start()
-    
-    yield firmware_node, test_node
 
+    yield {
+        'mock_serial_port': mock_serial_port,
+        'test_node': test_node,
+        'firmware_node': firmware_node
+    }
+
+    # Ensure resources are cleaned up properly
     firmware_node.close()
     rclpy.shutdown()
     executor_thread.join()
 
 
-@pytest.fixture(scope="module")
-def valves():
-    """
-    Wait for the valves to complete their initialization
-    Read from the firmware logs to determine when the valves are done homing
-    """
-    print("Waiting for valves to home")
-    valves_homed = False
-    while not valves_homed:
-        # Read from the file at /sys/kernel/debug/remoteproc/remoteproc0/trace0
-        # Look for the "Done homing the valves" message
-        with open("/sys/kernel/debug/remoteproc/remoteproc0/trace0", "r") as f:
-            for line in f:
-                if "Done homing the valves" in line:
-                    valves_homed = True
-                    break
-        time.sleep(0.5)
-    print("Valves homed")
-    yield valves_homed
+def test_heart_beat(nodes):
+    """Verify that the firmware is able to respond to the heartbeat packet."""
+    # Unpack the test objects from the fixture
+    mock_serial_port = nodes['mock_serial_port']
+    firmware_node = nodes['firmware_node']
+    # Subscribe to the heartbeat topic and wait for the first message
+
+    mock_serial_port.add_to_read_buffer(packet_transcoder.create_heartbeat_packet().encode())
+    time.sleep(1)
+    assert (time.time() - firmware_node.last_heartbeat_time) < firmware_node.heartbeat_timeout
 
 
-# # @pytest.mark.skip(reason="Not interesting right now")
-# def test_heart_beat(serial_port):
+def test_firmware_UART_write_topic(nodes):
+    """Verify that the firmware is able to receive messages from firmware_UART_write topic."""
+    # Unpack the test objects from the fixture
+    mock_serial_port = nodes['mock_serial_port']
+    firmware_node = nodes['firmware_node']
+    test_node = nodes['test_node']
+
+    # Publish a message to the serial port TX topic
+    msg = String()
+    msg.data = packet_transcoder.create_heartbeat_packet()
+    test_node.firmware_UART_write_publisher.publish(msg)
+
+    # Wait for the message to be processed
+    time.sleep(1)
+
+    # Check that the message was sent to the serial port
+    assert msg.data.encode() in mock_serial_port.write_data
+
+
+# @pytest.fixture(scope="module")
+# def valves():
 #     """
-#     Verify that the firmware is able to respond to the
-#     heartbeat packet.
+#     Wait for the valves to complete their initialization
+#     Read from the firmware logs to determine when the valves are done homing
 #     """
-#     heart_beat_packet = b"proto1 4748000000000000000000000000000A"
-#     serial_port.write(heart_beat_packet)
-
-#     # Read from the serial port for one second
-#     read_results = serial_port.read(1024)
-#     assert (
-#         b"proto1 4748000000000000000000000000000A" in read_results
-#     ), "Heartbeat packet not received"
+#     print("Waiting for valves to home")
+#     valves_homed = False
+#     while not valves_homed:
+#         # Read from the file at /sys/kernel/debug/remoteproc/remoteproc0/trace0
+#         # Look for the "Done homing the valves" message
+#         with open("/sys/kernel/debug/remoteproc/remoteproc0/trace0", "r") as f:
+#             for line in f:
+#                 if "Done homing the valves" in line:
+#                     valves_homed = True
+#                     break
+#         time.sleep(0.5)
+#     print("Valves homed")
+#     yield valves_homed
 
 
 # @pytest.mark.skip(reason="Not interesting right now")
@@ -183,22 +260,22 @@ def valves():
 #     # Send the packet
 #     firmware_node.transmit_queue.put(packet_string)
 
-    # # Create the expected response
-    # # Make an OK packet
-    # packet = Packet()
-    # packet_ID = ctypes.c_uint8(ord("D"))
-    # type_ID = ctypes.c_uint8(ord("N"))
-    # buf = ctypes.create_string_buffer(b"OK", 13)
-    # packet_transcoder.packetEncode_text(packet_ID, type_ID, ctypes.byref(packet), buf)
+# # Create the expected response
+# # Make an OK packet
+# packet = Packet()
+# packet_ID = ctypes.c_uint8(ord("D"))
+# type_ID = ctypes.c_uint8(ord("N"))
+# buf = ctypes.create_string_buffer(b"OK", 13)
+# packet_transcoder.packetEncode_text(packet_ID, type_ID, ctypes.byref(packet), buf)
 
-    # # Serialize the packet into a hex encoded string
-    # packet_string = PROTO_PREFIX
-    # packet_string += bytes(packet.raw).hex().upper().encode()
-    # print(packet_string.decode())
+# # Serialize the packet into a hex encoded string
+# packet_string = PROTO_PREFIX
+# packet_string += bytes(packet.raw).hex().upper().encode()
+# print(packet_string.decode())
 
-    # # Read from the serial port for one second
-    # read_results = serial_port.read(1024)
-    # assert packet_string in read_results, "System parameters not acknowledged"
+# # Read from the serial port for one second
+# read_results = serial_port.read(1024)
+# assert packet_string in read_results, "System parameters not acknowledged"
 
 
 # @pytest.mark.skip(reason="Not interesting right now")
@@ -379,103 +456,103 @@ def valves():
 
 
 # @pytest.mark.skip(reason="Not interesting right now")
-def test_cartridge_memory_write_read(nodes):
-    """
-    Function is responsible for checking that the cartridge memory is written correctly
-    and that the cartridge memory can be read back correctly
-    """
+# def test_cartridge_memory_write_read(nodes):
+#     """
+#     Function is responsible for checking that the cartridge memory is written correctly
+#     and that the cartridge memory can be read back correctly
+#     """
 
-    firmware_node, test_node = nodes
+#     firmware_node, test_node = nodes
 
-    request = CartridgeMemoryWrite.Request()
-    request.version = 3
-    request.revision = 1
-    request.serial_number = "ABC!#&def456"
-    request.has_oven = 1
-    request.max_pressure_rating = 60 # Hundreds of PSI
+#     request = CartridgeMemoryWrite.Request()
+#     request.version = 3
+#     request.revision = 1
+#     request.serial_number = "ABC!#&def456"
+#     request.has_oven = 1
+#     request.max_pressure_rating = 60 # Hundreds of PSI
 
-    future = test_node.cartridge_memory_write_client.call_async(request)
-    rclpy.spin_until_future_complete(test_node, future)
-    if future.result() is not None:
-        print(f'Result from cartridge_memory_write_service: {future.result().success}')
-    else:
-        print('Exception while calling cartridge_memory_write_service')
+#     future = test_node.cartridge_memory_write_client.call_async(request)
+#     rclpy.spin_until_future_complete(test_node, future)
+#     if future.result() is not None:
+#         print(f'Result from cartridge_memory_write_service: {future.result().success}')
+#     else:
+#         print('Exception while calling cartridge_memory_write_service')
 
-    # # Check for an OK packet
-    # read_results = serial_port.read(1024)
-    # assert (
-    #     acknowledgement_packet in read_results
-    # ), "Cartridge memory write packet not acknowledged"
+# # Check for an OK packet
+# read_results = serial_port.read(1024)
+# assert (
+#     acknowledgement_packet in read_results
+# ), "Cartridge memory write packet not acknowledged"
 
-    # # Create a cartridge memory read packet
-    # packet = Packet()
+# # Create a cartridge memory read packet
+# packet = Packet()
 
-    # # Create an array of 13 integers
-    # arr = (ctypes.c_int * 13)()
+# # Create an array of 13 integers
+# arr = (ctypes.c_int * 13)()
 
-    # # Set the first integer to 1
-    # arr[0] = GET_CARTRIDGE_CONFIGURATION_COMMAND_CODE
-    # packet_transcoder.packetEncode_text(
-    #     ctypes.c_uint8(ord("C")),
-    #     ctypes.c_uint8(ord("A")),
-    #     ctypes.byref(packet),
-    #     bytes(arr),
-    # )
+# # Set the first integer to 1
+# arr[0] = GET_CARTRIDGE_CONFIGURATION_COMMAND_CODE
+# packet_transcoder.packetEncode_text(
+#     ctypes.c_uint8(ord("C")),
+#     ctypes.c_uint8(ord("A")),
+#     ctypes.byref(packet),
+#     bytes(arr),
+# )
 
-    # # Serialize the packet into a hex encoded string
-    # packet_string = PROTO_PREFIX
-    # packet_string += bytes(packet.raw).hex().upper().encode()
-    # print(packet_string.decode())
+# # Serialize the packet into a hex encoded string
+# packet_string = PROTO_PREFIX
+# packet_string += bytes(packet.raw).hex().upper().encode()
+# print(packet_string.decode())
 
-    # # Send the packet
-    # serial_port.write(packet_string)
+# # Send the packet
+# serial_port.write(packet_string)
 
-    # # Check for an OK packet
-    # read_results = serial_port.read(1024)
-    # assert (
-    #     acknowledgement_packet in read_results
-    # ), "Cartridge memory read packet not acknowledged"
-    # print(read_results)
+# # Check for an OK packet
+# read_results = serial_port.read(1024)
+# assert (
+#     acknowledgement_packet in read_results
+# ), "Cartridge memory read packet not acknowledged"
+# print(read_results)
 
-    # cartridge_params_packet_string = b"cartridge_config " + "DC".encode().hex().upper().encode()
-    # cartridge_params_packet_string += bytes(cartridge_memory.raw).hex().upper().encode()
+# cartridge_params_packet_string = b"cartridge_config " + "DC".encode().hex().upper().encode()
+# cartridge_params_packet_string += bytes(cartridge_memory.raw).hex().upper().encode()
 
-    # # Check that the cartridge memory is correct
-    # # read_results = serial_port.read(1024)
-    # assert (
-    #     cartridge_params_packet_string in read_results
-    # ), "Cartridge memory read packet not correct"
+# # Check that the cartridge memory is correct
+# # read_results = serial_port.read(1024)
+# assert (
+#     cartridge_params_packet_string in read_results
+# ), "Cartridge memory read packet not correct"
 
 
-@pytest.mark.skip(reason="Not interesting right now")
-def test_temperature_sensor(nodes, valves):
-    """
-    Function is responsible for checking that the temperature sensor can be read
-    and is within a reasonable range
-    """
-    firmware_node, test_node = nodes
+# @pytest.mark.skip(reason="Not interesting right now")
+# def test_temperature_sensor(nodes, valves):
+#     """
+#     Function is responsible for checking that the temperature sensor can be read
+#     and is within a reasonable range
+#     """
+#     firmware_node, test_node = nodes
 
-    # Set the data acquisition state to cartridge only
-    firmware_node.set_data_acquisition_state(DataAcquisitionState.CARTRIDGE_ONLY)
+#     # Set the data acquisition state to cartridge only
+#     firmware_node.set_data_acquisition_state(DataAcquisitionState.CARTRIDGE_ONLY)
 
-    # Read the temperature sensor output for 10 seconds
-    # Check that the temperature is within a reasonable range
-    test_node.cartridge_temperature.clear()
-    start_time = time.time()
-    while (time.time() - start_time) < 30:
-    # for _ in range(10):
-        try:
-            temperature = test_node.cartridge_temperature.popleft()
-            print(f"Cartridge temperature: {temperature}")
-            assert temperature > -20, "Temperature is too low"
-            assert temperature < 100, "Temperature is too high"
-        except IndexError:
-            pass
-        finally:
-            time.sleep(1)
+#     # Read the temperature sensor output for 10 seconds
+#     # Check that the temperature is within a reasonable range
+#     test_node.cartridge_temperature.clear()
+#     start_time = time.time()
+#     while (time.time() - start_time) < 30:
+#     # for _ in range(10):
+#         try:
+#             temperature = test_node.cartridge_temperature.popleft()
+#             print(f"Cartridge temperature: {temperature}")
+#             assert temperature > -20, "Temperature is too low"
+#             assert temperature < 100, "Temperature is too high"
+#         except IndexError:
+#             pass
+#         finally:
+#             time.sleep(1)
 
-    # Set the data acquisition state to disabled
-    firmware_node.set_data_acquisition_state(DataAcquisitionState.DISABLED)
+#     # Set the data acquisition state to disabled
+#     firmware_node.set_data_acquisition_state(DataAcquisitionState.DISABLED)
 
 
 # @pytest.mark.skip(reason="Not interesting right now")
@@ -569,148 +646,148 @@ def test_temperature_sensor(nodes, valves):
 #         ), "DAQ toggle packet not acknowledged"
 
 
-@pytest.mark.skip(reason="Not interesting right now")
-def test_oven_controller(nodes):
-    """
-    Function is responsible for testing the PID controller of the oven.
-    The PID controller should be able to operate in a range of 20-80 degrees C.
-    The PID controller shouldn't overshoot the set point by more than 0.5 degrees C.
-    The PID controller should be able to hold the set point +- 0.1 degree C for 1 minute.
-    The PID controller should be able to settle in under 10 minutes.
-    """
-    firmware_node, test_node = nodes
+# @pytest.mark.skip(reason="Not interesting right now")
+# def test_oven_controller(nodes):
+#     """
+#     Function is responsible for testing the PID controller of the oven.
+#     The PID controller should be able to operate in a range of 20-80 degrees C.
+#     The PID controller shouldn't overshoot the set point by more than 0.5 degrees C.
+#     The PID controller should be able to hold the set point +- 0.1 degree C for 1 minute.
+#     The PID controller should be able to settle in under 10 minutes.
+#     """
+#     firmware_node, test_node = nodes
 
-    def float_to_uint32(float_number):
-        float_type = ctypes.c_float(float_number)
-        int_type = ctypes.cast(ctypes.pointer(float_type), ctypes.POINTER(ctypes.c_uint32))
-        return int_type.contents.value
+#     def float_to_uint32(float_number):
+#         float_type = ctypes.c_float(float_number)
+#         int_type = ctypes.cast(ctypes.pointer(float_type), ctypes.POINTER(ctypes.c_uint32))
+#         return int_type.contents.value
 
-    # Create a blank packet
-    packet = Packet()
+#     # Create a blank packet
+#     packet = Packet()
 
-    # Enable temperature sensor output
-    firmware_node.set_data_acquisition_state(DataAcquisitionState.CARTRIDGE_ONLY)
-    
-    set_point = 40.15
-    tolerance = 0.1
-    is_settled = False
+#     # Enable temperature sensor output
+#     firmware_node.set_data_acquisition_state(DataAcquisitionState.CARTRIDGE_ONLY)
 
-    # Create a packet to turn the oven fan on
-    packet_transcoder.packetEncode_8_32(
-        ctypes.byref(packet),
-        ctypes.c_uint8(ord("C")),
-        ctypes.c_uint8(ord("T")),
-        ctypes.c_uint8(ord("S")),
-        ctypes.c_uint32(float_to_uint32(set_point * 100)) # 40.15 degrees * 100
-    )
+#     set_point = 40.15
+#     tolerance = 0.1
+#     is_settled = False
 
-    # Serialize the packet into a hex encoded string
-    packet_string = PROTO_PREFIX
-    packet_string += bytes(packet.raw).hex().upper().encode()
-    print(packet_string.decode())
+#     # Create a packet to turn the oven fan on
+#     packet_transcoder.packetEncode_8_32(
+#         ctypes.byref(packet),
+#         ctypes.c_uint8(ord("C")),
+#         ctypes.c_uint8(ord("T")),
+#         ctypes.c_uint8(ord("S")),
+#         ctypes.c_uint32(float_to_uint32(set_point * 100)) # 40.15 degrees * 100
+#     )
 
-    # Send the packet
-    serial_port.write(packet_string)
+#     # Serialize the packet into a hex encoded string
+#     packet_string = PROTO_PREFIX
+#     packet_string += bytes(packet.raw).hex().upper().encode()
+#     print(packet_string.decode())
 
-    # Check for an OK packet
-    read_results = serial_port.read(1024)
-    print(read_results)
-    assert (acknowledgement_packet in read_results), "Oven on packet not acknowledged"
+#     # Send the packet
+#     serial_port.write(packet_string)
 
-    # Create a deque to store the last 60 temperature readings
-    temperature_readings = deque(maxlen=60)
+#     # Check for an OK packet
+#     read_results = serial_port.read(1024)
+#     print(read_results)
+#     assert (acknowledgement_packet in read_results), "Oven on packet not acknowledged"
 
-    # Get the current time and limit test to 10 mins
-    start_time = time.time()
-    while (time.time() - start_time) < 600:
-        line = serial_port.readline().strip()
-        print(line)
-        """
-        Parse the data into the packet
-        """
-        # Split the line on spaces
-        split_line = line.split(b" ")
-        if split_line[0] == b"proto1":
-            # Convert the hex string to bytes
-            hex_string = split_line[1].decode()
-            hex_bytes = bytes.fromhex(hex_string)
+#     # Create a deque to store the last 60 temperature readings
+#     temperature_readings = deque(maxlen=60)
 
-            # Copy the bytes into the packet
-            ctypes.memmove(ctypes.byref(packet.raw), hex_bytes, len(hex_bytes))
+#     # Get the current time and limit test to 10 mins
+#     start_time = time.time()
+#     while (time.time() - start_time) < 600:
+#         line = serial_port.readline().strip()
+#         print(line)
+#         """
+#         Parse the data into the packet
+#         """
+#         # Split the line on spaces
+#         split_line = line.split(b" ")
+#         if split_line[0] == b"proto1":
+#             # Convert the hex string to bytes
+#             hex_string = split_line[1].decode()
+#             hex_bytes = bytes.fromhex(hex_string)
 
-            # Check if the packet is a temperature data packet
-            if packet.field.packet_ID == ord("D") and packet.field.type_ID == ord("T"):
+#             # Copy the bytes into the packet
+#             ctypes.memmove(ctypes.byref(packet.raw), hex_bytes, len(hex_bytes))
 
-                # Decode the packet
-                sequence_number = ctypes.c_uint32(0)
-                oven_state = ctypes.c_uint8(0)
-                temperature = ctypes.c_uint16(0)
-                packet_transcoder.packetDecode_data(
-                    ctypes.byref(packet),
-                    ctypes.byref(sequence_number),
-                    ctypes.byref(oven_state),
-                    ctypes.byref(temperature),
-                )
+#             # Check if the packet is a temperature data packet
+#             if packet.field.packet_ID == ord("D") and packet.field.type_ID == ord("T"):
 
-                # Convert and insert
-                temperature_as_float = temperature.value / 100
-                temperature_readings.appendleft(temperature_as_float)
+#                 # Decode the packet
+#                 sequence_number = ctypes.c_uint32(0)
+#                 oven_state = ctypes.c_uint8(0)
+#                 temperature = ctypes.c_uint16(0)
+#                 packet_transcoder.packetDecode_data(
+#                     ctypes.byref(packet),
+#                     ctypes.byref(sequence_number),
+#                     ctypes.byref(oven_state),
+#                     ctypes.byref(temperature),
+#                 )
 
-                # Check if the temperature is stabilized
-                if all(set_point - tolerance <= item <= set_point + tolerance for item in temperature_readings):
-                    is_settled = True
-                    break
-    
-    # Check if the temperature is stabilized
-    assert is_settled, "Oven temperature did not stabilize"
+#                 # Convert and insert
+#                 temperature_as_float = temperature.value / 100
+#                 temperature_readings.appendleft(temperature_as_float)
 
-    # Turn off the temperature sensor output
-    state = 0
-    packet_transcoder.packetEncode_16(
-        ctypes.c_uint8(ord("C")),
-        ctypes.c_uint8(ord("U")),
-        ctypes.byref(packet),
-        ctypes.c_uint16(state),
-    )
+#                 # Check if the temperature is stabilized
+#                 if all(set_point - tolerance <= item <= set_point + tolerance for item in temperature_readings):
+#                     is_settled = True
+#                     break
 
-    # Serialize the packet into a hex encoded string
-    packet_string = PROTO_PREFIX
-    packet_string += bytes(packet.raw).hex().upper().encode()
-    print(packet_string.decode())
+#     # Check if the temperature is stabilized
+#     assert is_settled, "Oven temperature did not stabilize"
 
-    # Send the packet
-    serial_port.write(packet_string)
+#     # Turn off the temperature sensor output
+#     state = 0
+#     packet_transcoder.packetEncode_16(
+#         ctypes.c_uint8(ord("C")),
+#         ctypes.c_uint8(ord("U")),
+#         ctypes.byref(packet),
+#         ctypes.c_uint16(state),
+#     )
 
-    # Check for an OK packet
-    read_results = serial_port.read(1024)
-    print(read_results)
-    assert (acknowledgement_packet in read_results), "Data acquisition off packet acknowledged"
+#     # Serialize the packet into a hex encoded string
+#     packet_string = PROTO_PREFIX
+#     packet_string += bytes(packet.raw).hex().upper().encode()
+#     print(packet_string.decode())
+
+#     # Send the packet
+#     serial_port.write(packet_string)
+
+#     # Check for an OK packet
+#     read_results = serial_port.read(1024)
+#     print(read_results)
+#     assert (acknowledgement_packet in read_results), "Data acquisition off packet acknowledged"
 
 
-    # Wait for the oven to settle
-    # Parse the temperature sensor output
+#     # Wait for the oven to settle
+#     # Parse the temperature sensor output
 
-    # Create a packet to turn the oven fan off
-    packet_transcoder.packetEncode_8_32(
-        ctypes.byref(packet),
-        ctypes.c_uint8(ord("C")),
-        ctypes.c_uint8(ord("T")),
-        ctypes.c_uint8(ord("Q")),
-        ctypes.c_uint32(0) # 0 degrees * 100
-    )
+#     # Create a packet to turn the oven fan off
+#     packet_transcoder.packetEncode_8_32(
+#         ctypes.byref(packet),
+#         ctypes.c_uint8(ord("C")),
+#         ctypes.c_uint8(ord("T")),
+#         ctypes.c_uint8(ord("Q")),
+#         ctypes.c_uint32(0) # 0 degrees * 100
+#     )
 
-    # Serialize the packet into a hex encoded string
-    packet_string = PROTO_PREFIX
-    packet_string += bytes(packet.raw).hex().upper().encode()
-    print(packet_string.decode())
+#     # Serialize the packet into a hex encoded string
+#     packet_string = PROTO_PREFIX
+#     packet_string += bytes(packet.raw).hex().upper().encode()
+#     print(packet_string.decode())
 
-    # Send the packet
-    serial_port.write(packet_string)
+#     # Send the packet
+#     serial_port.write(packet_string)
 
-    # Check for an OK packet
-    read_results = serial_port.read(1024)
-    print(read_results)
-    assert (acknowledgement_packet in read_results), "Oven off packet not acknowledged"
+#     # Check for an OK packet
+#     read_results = serial_port.read(1024)
+#     print(read_results)
+#     assert (acknowledgement_packet in read_results), "Oven off packet not acknowledged"
 
 
 # def test_oven_step_response(serial_port, packet_transcoder, acknowledgement_packet):
@@ -757,6 +834,5 @@ def test_oven_controller(nodes):
 
 # def test_method(serial_port, packet_transcoder, acknowledgement_packet):
 #     """
-#     Function is responsible for 
+#     Function is responsible for
 #     """
-
