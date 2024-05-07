@@ -85,7 +85,7 @@ class FirmwareNode(Node):
 
         # Establish RPmsg port
         heart_beat_packet = self.packet_transcoder.create_heartbeat_packet()
-        self.firmware_serial_port.write(heart_beat_packet)
+        self.firmware_serial_port.write(heart_beat_packet.encode())
 
         # Used for coordinating the threads lifecycle
         self.is_alive = threading.Event()
@@ -164,7 +164,7 @@ class FirmwareNode(Node):
 
     def check_heartbeat(self):
         """Check if the firmware is still alive."""
-        while True:
+        while self.is_alive.is_set():
             time.sleep(1)
             if time.time() - self.last_heartbeat_time > self.heartbeat_timeout:
                 print("Firmware is not responding!")
