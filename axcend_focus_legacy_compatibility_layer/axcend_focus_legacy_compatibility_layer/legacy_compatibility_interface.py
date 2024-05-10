@@ -249,7 +249,7 @@ def update_system_parameters():
     return generate_json_response("update_system_parameters", "UPDATED SYSTEM PARAMETERS")
 
 
-if __name__ == "__main__":
+def main():
     rclpy.init()
     legacy_compatibility_interface = LegacyCompatibilityInterface(
         system_state["firmware_UART_write_queue"],
@@ -269,3 +269,6 @@ if __name__ == "__main__":
 
     rclpy.spin(legacy_compatibility_interface)
     rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()

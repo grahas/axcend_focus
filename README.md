@@ -12,7 +12,7 @@ Open the Ubuntu WSL VM and build server VM
 
 source /opt/ros/humble/setup.bash
 
-source install/local_setup.bash
+source install/setup.bash
 
 ### Clean Workspace
 
@@ -83,8 +83,10 @@ the axcend_focus prefix is for package organization on superflore
 ros2 pkg create --build-type ament_cmake --node-name firmware_bridge axcend_focus_ros2_firmware_bridge_cpp
 ros2 pkg create --build-type ament_python --node-name front_panel_button_controller axcend_focus_front_panel_button
 ros2 pkg create --build-type ament_python --node-name legacy_compatibility_interface axcend_focus_legacy_compatibility_layer
+ros2 pkg create --build-type ament_python axcend_focus_launch
 
 ros2 pkg create --build-type ament_cmake --node-name my_node my_package
+
 
 ## Set the URL for superflore build
 
@@ -122,4 +124,8 @@ colcon build --symlink-install
 # Build a specific package
 colcon build --packages-select axcend_focus_ros2_firmware_bridge 
 colcon build --packages-select axcend_focus_custom_interfaces 
+colcon build --packages-select axcend_focus_launch
 colcon build --symlink-install
+
+# Launch the nodes
+ros2 launch axcend_focus_launch application_launch.py
