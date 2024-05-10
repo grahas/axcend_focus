@@ -11,7 +11,7 @@ from sensor_msgs.msg import Temperature
 from threading import Thread
 from serial import SerialTimeoutException
 
-from axcend_focus_ros2_firmware_bridge.firmware_manager import (
+from axcend_focus_ros2_firmware_bridge.firmware_bridge import (
     FirmwareNode,
     DataAcquisitionState,
 )

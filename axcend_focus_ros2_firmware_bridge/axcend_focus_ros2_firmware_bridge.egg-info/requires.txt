@@ -1,5 +1,0 @@
-pyserial
-setuptools
-
-[debug]
-debugpy
