@@ -16,7 +16,7 @@ from axcend_focus_ros2_firmware_bridge.firmware_manager import (
     DataAcquisitionState,
 )
 from axcend_focus_custom_interfaces.srv import CartridgeMemoryReadWrite
-
+from axcend_focus_custom_interfaces.msg import PumpStatus
 
 # Get the current directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -52,6 +52,12 @@ class ExampleNode(Node):
             String, "firmware_UART_write", 10
         )
 
+        # Add a pump status subscriber
+        self.pump_status_subscription = self.create_subscription(
+            PumpStatus, "pump_status", self.pump_status_callback, 10
+        )
+        self.pump_status_cache = PumpStatus()
+
     def listener_callback(self, msg):
         """Callback function for the cartridge temperature subscriber."""
         self.cartridge_temperature.append(msg.temperature)
@@ -71,6 +77,10 @@ class ExampleNode(Node):
         else:
             self.get_logger().error("Service call failed!")
             return None
+        
+    def pump_status_callback(self, msg):
+        """Callback function for the pump status subscriber."""
+        self.pump_status_cache = msg
 
 
 @pytest.fixture

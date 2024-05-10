@@ -7,7 +7,7 @@ import json
 import platform
 import pkg_resources
 
-PACKET_MAX_LENGTH = 16
+PACKET_MAX_LENGTH = 16 # bytes
 PROTO_PREFIX = b"proto1 "
 
 
@@ -18,11 +18,6 @@ class DataAcquisitionState(Enum):
     CARTRIDGE_ONLY = 1
     VALVE_PUMPS_ONLY = 2
     CARTRIDGE_AND_VALVE_PUMPS = 3
-
-
-class Raw(ctypes.Structure):
-    _fields_ = [("raw", ctypes.c_uint8 * PACKET_MAX_LENGTH)]
-
 
 class Field(ctypes.Structure):
     _fields_ = [
@@ -35,7 +30,8 @@ class Field(ctypes.Structure):
 
 
 class Packet(ctypes.Union):
-    _fields_ = [("raw", Raw), ("field", Field)]
+    _fields_ = [("raw", ctypes.c_uint8 * PACKET_MAX_LENGTH), 
+                ("field", Field)]
 
 
 class _PhaseInfoBits(ctypes.Structure):
@@ -52,6 +48,7 @@ class PhaseInfo(ctypes.Union):
     
 
 class _PressureBits(ctypes.Structure):
+    _pack_ = 1
     _fields_ = [
         ("packet_ID", ctypes.c_uint8),
         ("type_ID", ctypes.c_uint8),
@@ -61,11 +58,12 @@ class _PressureBits(ctypes.Structure):
         ("pressureB", ctypes.c_uint16),
         ("positionA", ctypes.c_uint16),
         ("positionB", ctypes.c_uint16),
-        ("flowRate", ctypes.c_uint16)]
+        ("flowRate", ctypes.c_uint16),
+        ("end", ctypes.c_uint8)]
 
 
 class PressureInfo(ctypes.Union):
-    _fields_ = [("raw", ctypes.c_uint8 * 16),
+    _fields_ = [("raw", ctypes.c_uint8 * PACKET_MAX_LENGTH),
                 ("fields", _PressureBits)]
 
 class SystemParametersFields(ctypes.Structure):
@@ -233,8 +231,6 @@ class PacketTranscoder:
         ]
         packet_transcoder.packetDecode_oven_data.restype = ctypes.c_int
 
-
-
         return packet_transcoder
 
     def create_heartbeat_packet(self) -> str:
@@ -325,7 +321,7 @@ class PacketTranscoder:
         # Check the size of the packet
         if prefix == "proto1":
             # Make sure the packet is the correct size
-            assert len(data) == 16, "Invalid packet size for proto1"  # 16 bytes
+            assert len(data) == PACKET_MAX_LENGTH, "Invalid packet size for proto1"
 
             # Move the data into a packet object
             packet = Packet()
@@ -409,14 +405,18 @@ class PacketTranscoder:
 
         return PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
 
-    def create_dummy_pump_status_packet(self):
+    def create_dummy_pump_status_packet(self, phase):
         """Create a pump status packet."""
         packet = Packet()
 
         # Make an OK packet
-        packet_ID = ctypes.c_uint8(ord("D"))
-        type_ID = ctypes.c_uint8(ord("V"))
-        self.packet_transcoder.packetEncode_0(packet_ID, type_ID, ctypes.byref(packet))
+        self.packet_transcoder.packetEncode_8_32(
+            ctypes.byref(packet),
+            ctypes.c_uint8(ord("D")),
+            ctypes.c_uint8(ord("V")),
+            ctypes.c_uint8(phase),
+            ctypes.c_uint32(0),
+        )
 
         # Serialize the packet into a hex encoded string
         packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
@@ -451,7 +451,7 @@ class PacketTranscoder:
         ctypes.memmove(ctypes.byref(pressure_info.raw), ctypes.byref(packet.raw), len(packet.raw))
 
         # Extract the pressure values
-        phase = pressure_info.fields.phase
+        phase = pressure_info.fields.phase.raw
         stream_id = pressure_info.fields.streamId
         pressure_a = pressure_info.fields.pressureA
         pressure_b = pressure_info.fields.pressureB

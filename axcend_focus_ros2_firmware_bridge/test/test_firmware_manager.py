@@ -89,16 +89,17 @@ def test_pump_status(nodes):
     test_node = nodes['test_node']
 
     # Create a mock pump status packet to place in the read queue
-    pump_status = packet_transcoder.create_dummy_pump_status_packet()
+    phase = 1
+    pump_status = packet_transcoder.create_dummy_pump_status_packet(phase)
 
     # Add the pump status packet to the read buffer
     mock_serial_port.add_to_read_buffer(pump_status)
 
     # Give time for read buffer to process
-    time.sleep(1)
+    time.sleep(3)
 
     # Check that the pump status was received
-    
+    assert test_node.pump_status_cache.phase == phase
 
 
 
