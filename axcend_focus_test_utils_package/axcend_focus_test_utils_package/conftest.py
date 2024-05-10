@@ -15,7 +15,7 @@ from axcend_focus_ros2_firmware_bridge.firmware_manager import (
     FirmwareNode,
     DataAcquisitionState,
 )
-from axcend_focus_custom_interfaces.srv import CartridgeMemoryWrite
+from axcend_focus_custom_interfaces.srv import CartridgeMemoryReadWrite
 
 
 # Get the current directory
@@ -42,9 +42,9 @@ class ExampleNode(Node):
         self.msg_data = None
         self.cartridge_temperature = deque(maxlen=10)
 
-        # Create a client to access the write cartridge memory service
-        self.cartridge_memory_write_client = self.create_client(
-            CartridgeMemoryWrite, "cartridge_memory_write"
+        # Create a client for the cartridge_memory_read_write service
+        self.cartridge_memory_read_write_client = self.create_client(
+            CartridgeMemoryReadWrite, "cartridge_memory_read_write"
         )
 
         # Create a publisher to write to the firmware_UART_write string topic
@@ -55,6 +55,22 @@ class ExampleNode(Node):
     def listener_callback(self, msg):
         """Callback function for the cartridge temperature subscriber."""
         self.cartridge_temperature.append(msg.temperature)
+
+    def request_cartridge_memory(self):
+        """Send a request to the cartridge_memory_read_write service."""
+        request = CartridgeMemoryReadWrite.Request()
+        request.command = "read"
+        while not self.cartridge_memory_read_write_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Service not available, waiting again...")
+
+        future = self.cartridge_memory_read_write_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future)
+
+        if future.result() is not None:
+            return future.result()
+        else:
+            self.get_logger().error("Service call failed!")
+            return None
 
 
 @pytest.fixture

@@ -38,6 +38,36 @@ class Packet(ctypes.Union):
     _fields_ = [("raw", Raw), ("field", Field)]
 
 
+class _PhaseInfoBits(ctypes.Structure):
+    _fields_ = [("phase", ctypes.c_uint8, 3),
+                ("valveB", ctypes.c_uint8, 1),
+                ("valveA", ctypes.c_uint8, 2),
+                ("moving", ctypes.c_uint8, 1),
+                ("direction", ctypes.c_uint8, 1)]
+
+
+class PhaseInfo(ctypes.Union):
+    _fields_ = [("raw", ctypes.c_uint8),
+                ("bits", _PhaseInfoBits)]
+    
+
+class _PressureBits(ctypes.Structure):
+    _fields_ = [
+        ("packet_ID", ctypes.c_uint8),
+        ("type_ID", ctypes.c_uint8),
+        ("phase", PhaseInfo),
+        ("streamId", ctypes.c_uint16),
+        ("pressureA", ctypes.c_uint16),
+        ("pressureB", ctypes.c_uint16),
+        ("positionA", ctypes.c_uint16),
+        ("positionB", ctypes.c_uint16),
+        ("flowRate", ctypes.c_uint16)]
+
+
+class PressureInfo(ctypes.Union):
+    _fields_ = [("raw", ctypes.c_uint8 * 16),
+                ("fields", _PressureBits)]
+
 class SystemParametersFields(ctypes.Structure):
     _pack_ = 1
     _fields_ = [
@@ -203,6 +233,8 @@ class PacketTranscoder:
         ]
         packet_transcoder.packetDecode_oven_data.restype = ctypes.c_int
 
+
+
         return packet_transcoder
 
     def create_heartbeat_packet(self) -> str:
@@ -305,10 +337,12 @@ class PacketTranscoder:
             assert (
                 len(data) == 84
             ), "Invalid packet size for cartridge_config"  # 84 bytes
-            packet_type = "cartridge_config"
 
             # Move the data into a packet object
             packet = CartridgeMemory_t()
+
+            # Trim first two bytes of the data (packet ID and type ID)
+            data = data[2:]
 
             # Copy the bytes into the packet
             ctypes.memmove(ctypes.byref(packet.raw), data, len(data))
@@ -346,61 +380,48 @@ class PacketTranscoder:
         packet = CartridgeMemory_t()
 
         # Set the fields of the union according to the data in the JSON object
-        packet.data.version = int(cartridge_data["version"])
-        packet.data.revision = int(cartridge_data["revision"])
-        packet.data.serial_number = cartridge_data["serial_number"].encode()
-        packet.data.max_pressure_rating = int(cartridge_data["max_pressure_rating"])
-        packet.data.has_oven = int(cartridge_data["has_oven"])
-        packet.data.is_third_party = int(cartridge_data["is_third_party"])
-        packet.data.last_write_date = cartridge_data["last_write_date"].encode()
-        packet.data.total_run_time = int(cartridge_data["total_run_time"])
-        packet.data.cartridge_flags = int(cartridge_data["cartridge_flags"])
-        packet.data.detector_count = int(cartridge_data["detector_count"])
-        packet.data.detector_1_type = int(cartridge_data["detector_1_type"])
-        packet.data.detector_1_wavelength = int(cartridge_data["detector_1_wavelength"])
-        packet.data.detector_1_path_length = int(
-            cartridge_data["detector_1_path_length"]
-        )
-        packet.data.detector_2_type = int(cartridge_data["detector_2_type"])
-        packet.data.detector_2_wavelength = int(cartridge_data["detector_2_wavelength"])
-        packet.data.detector_2_path_length = int(
-            cartridge_data["detector_2_path_length"]
-        )
-        packet.data.column_count = int(cartridge_data["column_count"])
-        packet.data.column_1_length = int(cartridge_data["column_1_length"])
-        packet.data.column_1_diameter = int(cartridge_data["column_1_diameter"])
-        packet.data.column_1_particle_size = int(
-            cartridge_data["column_1_particle_size"]
-        )
-        packet.data.column_1_description = cartridge_data[
-            "column_1_description"
-        ].encode()
-        packet.data.column_2_length = int(cartridge_data["column_2_length"])
-        packet.data.column_2_diameter = int(cartridge_data["column_2_diameter"])
-        packet.data.column_2_particle_size = int(
-            cartridge_data["column_2_particle_size"]
-        )
-        packet.data.column_2_description = cartridge_data[
-            "column_2_description"
-        ].encode()
-        packet.data.detector_1_adc_gain = int(cartridge_data["detector_1_adc_gain"])
-        packet.data.detector_1_adc_delay = int(cartridge_data["detector_1_adc_delay"])
-        packet.data.detector_1_led_pot = int(cartridge_data["detector_1_led_pot"])
-        packet.data.detector_2_adc_gain = int(cartridge_data["detector_2_adc_gain"])
-        packet.data.detector_2_adc_delay = int(cartridge_data["detector_2_adc_delay"])
-        packet.data.detector_2_led_pot = int(cartridge_data["detector_2_led_pot"])
-        packet.data.bluetooth_disabled = int(cartridge_data["bluetooth_disabled"])
-        packet.data.report_rate = int(cartridge_data["report_rate"])
-        packet.data.word_rate = int(cartridge_data["word_rate"])
-        packet.data.unused = int(cartridge_data["unused"])
-        packet.data.samples_per_point = int(cartridge_data["samples_per_point"])
-        packet.data.bits_to_remove = int(cartridge_data["bits_to_remove"])
+        for key in cartridge_data.keys():
+            value = cartridge_data[key]
+            if isinstance(value, str):
+                value = value.encode()
+            else:
+                value = int(value)
+            setattr(packet.data, key, value)
 
         # Serialize the struct into a hex encoded string
-        packet_string = b"cartridge_config "
+        packet_string = b"cartridge_config " + "DC".encode().hex().upper().encode()
         packet_string += bytes(packet.raw).hex().upper().encode()
 
         return packet_string
+    
+    def create_data_acquisition_state_packet(self, state: DataAcquisitionState) -> str:
+        """Create a data acquisition state packet."""
+        # Create a blank packet
+        packet = Packet()
+
+        # Enable temperature sensor output
+        self.packet_transcoder.packetEncode_16(
+            ctypes.c_uint8(ord("C")),
+            ctypes.c_uint8(ord("U")),
+            ctypes.byref(packet),
+            ctypes.c_uint16(state.value),
+        )
+
+        return PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
+
+    def create_dummy_pump_status_packet(self):
+        """Create a pump status packet."""
+        packet = Packet()
+
+        # Make an OK packet
+        packet_ID = ctypes.c_uint8(ord("D"))
+        type_ID = ctypes.c_uint8(ord("V"))
+        self.packet_transcoder.packetEncode_0(packet_ID, type_ID, ctypes.byref(packet))
+
+        # Serialize the packet into a hex encoded string
+        packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
+        return packet_string
+
 
     def parse_values_oven_status_packet(self, packet: Packet) -> list:
         """Parse the values from the oven packet."""
@@ -421,17 +442,22 @@ class PacketTranscoder:
 
         return [sequence_number, oven_state, temperature_as_float, power_output]
 
-    def create_data_acquisition_state_packet(self, state: DataAcquisitionState) -> str:
-        """Create a data acquisition state packet."""
-        # Create a blank packet
-        packet = Packet()
+    def parse_pressure_packet(self, packet: Packet) -> list:
+        """Parse the pressure value from the packet."""
+        # Create a pressure info object
+        pressure_info = PressureInfo()
 
-        # Enable temperature sensor output
-        self.packet_transcoder.packetEncode_16(
-            ctypes.c_uint8(ord("C")),
-            ctypes.c_uint8(ord("U")),
-            ctypes.byref(packet),
-            ctypes.c_uint16(state.value),
-        )
+        # Copy the packet data into the pressure info object
+        ctypes.memmove(ctypes.byref(pressure_info.raw), ctypes.byref(packet.raw), len(packet.raw))
 
-        return PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
+        # Extract the pressure values
+        phase = pressure_info.fields.phase
+        stream_id = pressure_info.fields.streamId
+        pressure_a = pressure_info.fields.pressureA
+        pressure_b = pressure_info.fields.pressureB
+        position_a = pressure_info.fields.positionA
+        position_b = pressure_info.fields.positionB
+        flow_rate = pressure_info.fields.flowRate
+
+        return [phase, stream_id, pressure_a, pressure_b, position_a, position_b, flow_rate]
+

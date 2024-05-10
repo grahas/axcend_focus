@@ -20,15 +20,23 @@ from rclpy.action import ActionServer
 from axcend_focus_ros2_firmware_bridge.packet_definitions import (
     PacketTranscoder,
     DataAcquisitionState,
+    CartridgeMemory_t,
 )
 
-from axcend_focus_custom_interfaces.srv import CartridgeMemoryWrite
+from axcend_focus_custom_interfaces.srv import (
+    CartridgeMemoryReadWrite,
+    SystemParametersUpdate,
+)
 from axcend_focus_custom_interfaces.action import ValveRotate
-from axcend_focus_custom_interfaces.msg import CartridgeOvenStatus
+from axcend_focus_custom_interfaces.msg import CartridgeOvenStatus, PumpStatus
 
 # Define some constants
 
 GET_CARTRIDGE_CONFIGURATION_COMMAND_CODE = 0x01
+
+CHANNEL_A = 0
+CHANNEL_B = 1
+
 
 # Globals
 firmware_node = None
@@ -113,9 +121,18 @@ class FirmwareNode(Node):
 
         # Create a service to handle the write cartridge memory command {#5fb8cf,5}
         self.cartridge_memory_write_service = self.create_service(
-            CartridgeMemoryWrite,
-            "cartridge_memory_write",
-            self.callback_cartridge_memory_write,
+            CartridgeMemoryReadWrite,
+            "cartridge_memory_read_write",
+            self.callback_cartridge_memory_read_write,
+        )
+
+        self.cartridge_memory_service_cache = CartridgeMemoryReadWrite.Response()
+
+        # Service to write the system parameters to the firmware
+        self.system_parameters_service = self.create_service(
+            SystemParametersUpdate,
+            "system_parameters_update",
+            self.callback_system_parameters_update,
         )
 
         # Create a service to handle moving the valves {#6f4162,6}
@@ -130,6 +147,9 @@ class FirmwareNode(Node):
         self.temperature_publisher = self.create_publisher(
             CartridgeOvenStatus, "cartridge_oven_state", 10
         )
+
+        # Create a publisher for pressure / pump data
+        self.pressure_publisher = self.create_publisher(PumpStatus, "pump_status", 10)
 
         # Create a service call to handle manual pump positioning
         # self.manual_pump_positioning_service = self.create_service(
@@ -184,12 +204,40 @@ class FirmwareNode(Node):
 
     # Cartridge related code section {#5fb8cf,26}
     def handle_cartridge_config_packet(self, packet):
-        """Deserializing the cartridge config packet and publishing it to the ROS2 topic."""
-        pass
+        """Update the cartridge_memory_service_cache with the data from the packet."""
+        for field_name, _ in getattr(packet.data, "_fields_"):
+            if hasattr(self.cartridge_memory_service_cache, field_name):
+                value = getattr(packet.data, field_name)
+                if isinstance(value, bytes):
+                    value = value.decode()
+                else:
+                    value = int(value)
+                setattr(self.cartridge_memory_service_cache, field_name, value)
 
     def handle_pressure_packet(self, packet):
         """Handle the pressure packet."""
-        pass
+        [
+            phase,
+            stream_id,
+            pressure_a,
+            pressure_b,
+            position_a,
+            position_b,
+            flow_rate,
+        ] = self.packet_transcoder.parse_pressure_packet(packet)
+
+        # Create a pump status message
+        pump_status_message = PumpStatus()
+        pump_status_message.phase = phase
+        pump_status_message.header.stamp.sec = stream_id
+        pump_status_message.pressure[CHANNEL_A] = pressure_a
+        pump_status_message.pressure[CHANNEL_B] = pressure_b
+        pump_status_message.position[CHANNEL_A] = position_a
+        pump_status_message.position[CHANNEL_B] = position_b
+        pump_status_message.flow_rate = flow_rate
+
+        # Publish the message
+        self.pressure_publisher.publish(pump_status_message)
 
     def set_phase(self, phase):
         """Set the phase of the firmware."""
@@ -199,22 +247,43 @@ class FirmwareNode(Node):
         """Set the operational mode of the firmware."""
         pass
 
-    def callback_cartridge_memory_write(self, request, response):
-        """Handle the write cartridge memory request."""
-        print("Received a write cartridge memory request")
-
-        # Create a cartridge memory packet
-        cartridge_memory_string = self.packet_transcoder.create_cartridge_memory_write_packet(
-            request
+    def callback_system_parameters_update(self, request, response):
+        """Handle the system parameters write request."""
+        # Create a system parameters packet
+        system_parameters_packet = (
+            self.packet_transcoder.create_system_parameters_packet()
         )
 
         # Send the packet
-        self.transmit_queue.put(cartridge_memory_string)
+        self.transmit_queue.put(system_parameters_packet)
 
         # Wait for one second for the acknowledgement
         time.sleep(1)
 
         response.success = True
+
+        return response
+
+    def callback_cartridge_memory_read_write(self, request, response):
+        """Handle the read or write cartridge memory request."""
+        if request.command == "read":
+            # Return the cached data
+            response = self.cartridge_memory_service_cache
+
+        elif request.command == "write":
+            # Create a cartridge memory packet
+            cartridge_memory_string = (
+                self.packet_transcoder.create_cartridge_memory_write_packet(request)
+            )
+            # Send the packet
+            self.transmit_queue.put(cartridge_memory_string)
+
+        else:
+            print("Invalid command received")
+
+        # Wait for one second for the acknowledgement
+        time.sleep(1)
+
         return response
 
     # Valve related code section {#6f4162,22}
@@ -302,14 +371,13 @@ class FirmwareNode(Node):
             except serial.SerialTimeoutException:
                 # No data received this time, just continue with the loop
                 continue
-            
+
             except AttributeError:
                 # No data received this time, just continue with the loop
                 continue
 
             except Exception as e:
                 print(f"Error: {e}")
-
 
     def listener_callback(self, msg):
         """Enqueue data to be written to the firmware."""

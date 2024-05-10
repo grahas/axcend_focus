@@ -14,7 +14,7 @@ from unittest.mock import Mock
 
 import pytest
 import rclpy
-from axcend_focus_custom_interfaces.srv import CartridgeMemoryWrite
+from axcend_focus_custom_interfaces.srv import CartridgeMemoryReadWrite
 from axcend_focus_ros2_firmware_bridge import packet_definitions
 from axcend_focus_ros2_firmware_bridge.firmware_manager import (
     DataAcquisitionState, FirmwareNode)
@@ -57,6 +57,50 @@ def test_firmware_UART_write_topic(nodes):
 
     # Check that the message was sent to the serial port
     assert msg.data.encode() in mock_serial_port.write_data
+
+
+def test_cartridge_memory_read_write(nodes):
+    """Verify that the firmware is able to read and write to the cartridge memory."""
+    # Unpack the test objects from the fixture
+    mock_serial_port = nodes['mock_serial_port']
+    test_node = nodes['test_node']
+
+    # Create a mock cartridge memory packet to place in the read queue
+    cartridge_config_packet = packet_transcoder.create_cartridge_memory_write_packet({"version": 3})
+    mock_serial_port.add_to_read_buffer(cartridge_config_packet)
+
+    # Give time for read buffer to process
+    time.sleep(1)
+
+    # Create a request to write to the cartridge memory
+    results = test_node.request_cartridge_memory()
+
+    # Check that the write request was successful
+    assert results is not None
+
+    # Check that we have the correct response
+    assert results.version == 3
+
+
+def test_pump_status(nodes):
+    """Verify that the firmware is able to send the pump status."""
+    # Unpack the test objects from the fixture
+    mock_serial_port = nodes['mock_serial_port']
+    test_node = nodes['test_node']
+
+    # Create a mock pump status packet to place in the read queue
+    pump_status = packet_transcoder.create_dummy_pump_status_packet()
+
+    # Add the pump status packet to the read buffer
+    mock_serial_port.add_to_read_buffer(pump_status)
+
+    # Give time for read buffer to process
+    time.sleep(1)
+
+    # Check that the pump status was received
+    
+
+
 
 
 # @pytest.fixture(scope="module")
@@ -363,7 +407,7 @@ def test_firmware_UART_write_topic(nodes):
 
 #     firmware_node, test_node = nodes
 
-#     request = CartridgeMemoryWrite.Request()
+#     request = CartridgeMemoryReadWrite.Request()
 #     request.version = 3
 #     request.revision = 1
 #     request.serial_number = "ABC!#&def456"

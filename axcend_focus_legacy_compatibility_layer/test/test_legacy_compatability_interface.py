@@ -11,8 +11,9 @@ import launch_ros.actions
 from axcend_focus_legacy_compatibility_layer.legacy_compatibility_interface import (
     app,
     system_state,
-    LegacyCompatibilityInterface,
+    update_legacy_compatibility_interface_reference,
 )
+from axcend_focus_legacy_compatibility_layer.legacy_compatibility_interface_node import LegacyCompatibilityInterface
 import axcend_focus_ros2_firmware_bridge.packet_definitions as packet_definitions
 from axcend_focus_test_utils_package.conftest import nodes, mock_serial_port
 import time
@@ -50,6 +51,9 @@ def nodes_with_legacy(nodes):
         system_state["firmware_UART_write_queue"],
         system_state["firmware_UART_read_queue"])
     nodes['executor'].add_node(legacy_compatibility_interface)
+
+    # Update the reference to the legacy compatibility interface node
+    update_legacy_compatibility_interface_reference(legacy_compatibility_interface)
     
     # Start the publish thread
     publish_thread = threading.Thread(
@@ -57,6 +61,7 @@ def nodes_with_legacy(nodes):
     )
     publish_thread.start()
 
+    # Yield the nodes
     yield nodes
 
     # Clean up the legacy compatibility interface node
@@ -174,4 +179,118 @@ def test_write(client, nodes_with_legacy):
 
     # Check the data in the firmware_UART_write_queue
     assert dummy_packet.encode() in mock_serial_port.write_data
+
+
+def test_cartridge_write(client, nodes_with_legacy):
+    """Test the cartridge_write route."""
+    # Get testing tools
+    mock_serial_port = nodes_with_legacy['mock_serial_port']
+
+    # Create a dummy packet to write
+    cartridge_data = {
+        "version": 0,
+        "revision": 0,
+        "serial_number": "123ABC123ABC",
+        "max_pressure_rating": 0,
+        "has_oven": 0,
+        "is_third_party": 0,
+        "last_write_date": "000000",
+        "total_run_time": 0,
+        "cartridge_flags": 0,
+        "detector_count": 0,
+        "detector_1_type": 0,
+        "detector_1_wavelength": 0,
+        "detector_1_path_length": 0,
+        "detector_2_type": 0,
+        "detector_2_wavelength": 0,
+        "detector_2_path_length": 0,
+        "column_count": 0,
+        "column_1_length": 0,
+        "column_1_diameter": 0,
+        "column_1_particle_size": 0,
+        "column_1_description": "0000",
+        "column_2_length": 0,
+        "column_2_diameter": 0,
+        "column_2_particle_size": 0,
+        "column_2_description": "0000",
+        "detector_1_adc_gain": 0,
+        "detector_1_adc_delay": 0,
+        "detector_1_led_pot": 0,
+        "detector_2_adc_gain": 0,
+        "detector_2_adc_delay": 0,
+        "detector_2_led_pot": 0,
+        "bluetooth_disabled": 0,
+        "report_rate": 0,
+        "word_rate": 0,
+        "unused": 0,
+        "samples_per_point": 0,
+        "bits_to_remove": 0
+    }
+    dummy_packet = packet_transcoder.create_cartridge_memory_write_packet(cartridge_data).decode()
+
+    # Write the packet
+    response = client.get(f"/cartridge_write?data={dummy_packet.split('cartridge_config ')[1]}")
+
+    # Sleep for one second to allow the data to be written
+    time.sleep(1)
+    
+    # Check the response
+    assert response.status_code == 200
+    assert dummy_packet.encode() in response.data
+
+    # Check the data in the firmware_UART_write_queue
+    assert dummy_packet.encode() in mock_serial_port.write_data
+
+
+def test_cartridge_config(client, nodes_with_legacy):
+    """Test the cartridge_config route."""
+    response = client.get("/cartridge_config")
+
+    # Check the response
+    assert response.status_code == 200
+
+    # Check the response data
+    assert b"version" in response.data
+
+
+def test_device_config(client):
+    """Test the device_config route."""
+    response = client.get("/deviceconfig")
+
+    # Check the response
+    assert response.status_code == 200
+
+    # Check the response data
+    assert b"deviceconfig" in response.data
+
+
+def test_update_system_parameters(client, nodes_with_legacy):
+    """Test the update_system_parameters route."""
+    # Get testing tools
+    mock_serial_port = nodes_with_legacy['mock_serial_port']
+
+    # Write the packet
+    response = client.get("/update_system_parameters")
+
+    # Sleep for one second to allow the data to be written
+    time.sleep(1)
+    
+    # Check the response
+    assert response.status_code == 200
+
+    # Check the data in the firmware_UART_write_queue
+    count = sum(s.count(b"SysParams") for s in mock_serial_port.write_data)
+    assert count == 2 # Two because one is in the queue by default and one more for our test
+
+
+def test_machine_state(client, nodes_with_legacy):
+    """Test the machinestate route."""
+    response = client.get("/machinestate")
+
+    # Check the response
+    assert response.status_code == 200
+
+    # Check the response data
+    assert b"machinestate" in response.data
+
 

@@ -121,5 +121,5 @@ colcon build --symlink-install
 
 # Build a specific package
 colcon build --packages-select axcend_focus_ros2_firmware_bridge 
-
+colcon build --packages-select axcend_focus_custom_interfaces 
 colcon build --symlink-install

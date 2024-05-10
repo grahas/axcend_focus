@@ -1,4 +1,6 @@
 import base64
+import json
+import os
 import random
 import socket
 import threading
@@ -7,12 +9,14 @@ from datetime import datetime
 from functools import wraps
 from queue import Empty, Queue
 
+from axcend_focus_legacy_compatibility_layer.legacy_compatibility_interface_node import LegacyCompatibilityInterface
 import rclpy
 from flask import Flask, g, jsonify, request
 from rclpy.node import Node
 from std_msgs.msg import String
 
 app = Flask(__name__)
+legacy_compatibility_interface = None
 
 # Simulating the system state and configuration
 system_state = {
@@ -26,43 +30,6 @@ system_state = {
 }
 
 
-class LegacyCompatibilityInterface(Node):
-    """Node provides access to the firmware_bridge RX and TX topics."""
-
-    def __init__(self, write_queue: Queue, read_queue: Queue):
-        super().__init__("legacy_compatibility_interface")
-
-        self.write_queue = write_queue
-        self.read_queue = read_queue
-        self.shutdown_event = threading.Event()
-
-        # Create a publisher for the firmware_UART_write topic
-        self.firmware_UART_write_publisher = self.create_publisher(
-            String, "firmware_UART_write", 10
-        )
-
-        # Create a subscriber for the firmware_UART_read topic
-        self.firmware_UART_read_subscription = self.create_subscription(
-            String, "firmware_UART_read", self.firmware_UART_read_callback, 10
-        )
-
-    def firmware_UART_read_callback(self, msg):
-        """Callback function for the firmware_bridge TX topic."""
-        # Remove the proto1 prefix
-        msg.data = msg.data.split("proto1 ")[1]
-        self.read_queue.put(msg.data)
-
-    def publish_to_firmware_UART_write_thread(self):
-        """Publish messages from the queue to the firmware_UART_write topic."""
-        msg = String()
-        while not self.shutdown_event.is_set():
-            try:
-                msg = self.write_queue.get(timeout=0.5)
-                self.firmware_UART_write_publisher.publish(msg)
-            except Empty:
-                continue
-
-
 def generate_key(user, ip):
     random_data = random.getrandbits(128)
     key_prefix = "FocusLC"
@@ -72,6 +39,15 @@ def generate_key(user, ip):
     ).decode()
     return encoded_key
 
+
+def update_legacy_compatibility_interface_reference(interface):
+    """Update the reference to the legacy compatibility interface.
+    
+    This function is used to update the reference to the legacy compatibility interface
+    in the test fixtures.
+    """
+    global legacy_compatibility_interface
+    legacy_compatibility_interface = interface
 
 def generate_json_response(method, result):
     """Generate a JSON response with the method, timestamp, microseconds, and result."""
@@ -100,7 +76,6 @@ def check_key(func):
     return wrapper
 
 
-# Hello world route
 @app.route("/")
 def home():
     return "Hello, World!"
@@ -216,17 +191,62 @@ def write():
     return generate_json_response("write", "OK")
 
 
-# cartridge_config
+@app.route("/cartridge_write", methods=["GET"])
+@check_key
+def cartridge_write():
+    """This route is used to write the cartridge configuration to the firmware."""
+    message = request.args.get("data")
+    msg = String()
+    msg.data = "cartridge_config " + message
+    system_state["firmware_UART_write_queue"].put(msg)
 
-# machinestate
+    return generate_json_response("cartridge_write", msg.data)
 
-# clear
 
-# deviceconfig
+@app.route("/cartridge_config", methods=["GET"])
+def cartridge_config():
+    """This route is used to read the cartridge configuration from the firmware."""
+    results = legacy_compatibility_interface.request_cartridge_memory()
+    return generate_json_response("cartridge_config", results)
 
-# cartridge_write
 
-# update_system_parameters
+@app.route("/machinestate", methods=["GET"])
+def machine_state():
+    """Return the machine state."""
+    state_string = legacy_compatibility_interface.get_machine_state_string()
+    return generate_json_response("machinestate", {
+        "state": state_string, 
+        "locked": "1" if system_state["is_reserved"] else "0"}
+    )
+
+
+@app.route("/clear", methods=["GET"])
+@check_key
+def clear():
+    """Clear the serial port"""
+    system_state["firmware_UART_read_queue"].queue.clear()
+    system_state["firmware_UART_write_queue"].queue.clear()
+    return generate_json_response("clear", "Cleared")
+
+
+@app.route("/deviceconfig", methods=["GET"])
+def device_config():
+    """Return the device configuration."""
+    system_parameters_file_path = os.environ.get("SYS_PARAMS_FILE")
+
+    # Get the json file
+    with open(system_parameters_file_path, "r") as file:
+        data = json.load(file)
+        del data["OutputEvents"]
+    return generate_json_response("deviceconfig", data)
+
+
+@app.route("/update_system_parameters", methods=["GET"])
+@check_key
+def update_system_parameters():
+    """Update the system parameters."""
+    legacy_compatibility_interface.request_system_parameters_update()
+    return generate_json_response("update_system_parameters", "UPDATED SYSTEM PARAMETERS")
 
 
 if __name__ == "__main__":
