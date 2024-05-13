@@ -6,49 +6,34 @@
 # debugpy.wait_for_client()
 
 import os
-import time
-import serial
-import threading
 import queue
 import signal
+import sys
+import threading
+import time
+
 import rclpy
-from std_msgs.msg import String
-from std_msgs.msg import Header
-from rclpy.node import Node
-from rclpy.action import ActionServer
-
-from axcend_focus_ros2_firmware_bridge.packet_definitions import (
-    PacketTranscoder,
-    DataAcquisitionState,
-    CartridgeMemory_t,
-)
-
-from axcend_focus_custom_interfaces.srv import (
-    CartridgeMemoryReadWrite,
-    SystemParametersUpdate,
-)
+import serial
 from axcend_focus_custom_interfaces.action import ValveRotate
 from axcend_focus_custom_interfaces.msg import CartridgeOvenStatus, PumpStatus
+from axcend_focus_custom_interfaces.srv import (CartridgeMemoryReadWrite,
+                                                SystemParametersUpdate)
+from axcend_focus_test_utils_package.mock_serial_port import \
+    create_mock_serial_port
+from rclpy.action import ActionServer
+from rclpy.node import Node
+from std_msgs.msg import Header, String
+
+from axcend_focus_ros2_firmware_bridge.packet_definitions import (
+    DataAcquisitionState, PacketTranscoder)
 
 # Define some constants
-
 GET_CARTRIDGE_CONFIGURATION_COMMAND_CODE = 0x01
 
 CHANNEL_A = 0
 CHANNEL_B = 1
 
-
-# Globals
-firmware_node = None
-
-# Color guide for the comments
-# Cartridge_related_functions {#5fb8cf,0}
-# Valve_related_functions {#6f4162,0}
-# Pump_related_functions {#e172cf,0}
-# Oven_related_functions {#09513c, 0}
-
-
-def firmware_serial_port():
+def get_hardware_firmware_serial_port():
     """Turn on the firmware, Open the serial port."""
     # Variables
     firmware_serial_port_path = "/dev/ttyRPMSG0"
@@ -73,7 +58,7 @@ def firmware_serial_port():
 class FirmwareNode(Node):
     """Create a ROS2 node that will translate between the firmware and ROS2."""
 
-    def __init__(self, serial_port=None):
+    def __init__(self, firmware_serial_port=None):
         # Initialize the node
         super().__init__("firmware_node")
 
@@ -89,7 +74,17 @@ class FirmwareNode(Node):
         )
 
         # Open the serial port, use the dummy testing one if provided
-        self.firmware_serial_port = serial_port or firmware_serial_port()
+        # Check environment variable to see if we are in development mode
+        if firmware_serial_port is not None:  # Passed in when testing
+            self.firmware_serial_port = firmware_serial_port
+        elif (
+            os.environ.get("ENVIRONMENT") == "development"
+        ):  # Used when running on development machine
+            # Use a fake serial port for testing
+            self.firmware_serial_port = create_mock_serial_port()
+        else:  # Used for production
+            # Use the hardware serial port
+            self.firmware_serial_port = get_hardware_firmware_serial_port()
 
         # Establish RPmsg port
         heart_beat_packet = self.packet_transcoder.create_heartbeat_packet()
@@ -190,7 +185,7 @@ class FirmwareNode(Node):
                 print("Firmware is not responding!")
                 break
 
-    def handle_heart_beat_packet(self, packet):
+    def handle_heart_beat_packet(self, _):
         """Handle the heart beat packet."""
         self.last_heartbeat_time = time.time()
 
@@ -202,7 +197,6 @@ class FirmwareNode(Node):
         """Handle the command acknowledgement packet."""
         pass
 
-    # Cartridge related code section {#5fb8cf,26}
     def handle_cartridge_config_packet(self, packet):
         """Update the cartridge_memory_service_cache with the data from the packet."""
         for field_name, _ in getattr(packet.data, "_fields_"):
@@ -247,7 +241,7 @@ class FirmwareNode(Node):
         """Set the operational mode of the firmware."""
         pass
 
-    def callback_system_parameters_update(self, request, response):
+    def callback_system_parameters_update(self, _, response):
         """Handle the system parameters write request."""
         # Create a system parameters packet
         system_parameters_packet = (
@@ -256,9 +250,6 @@ class FirmwareNode(Node):
 
         # Send the packet
         self.transmit_queue.put(system_parameters_packet)
-
-        # Wait for one second for the acknowledgement
-        time.sleep(1)
 
         response.success = True
 
@@ -286,7 +277,6 @@ class FirmwareNode(Node):
 
         return response
 
-    # Valve related code section {#6f4162,22}
     def callback_rotate_valves(self, goal_handle):
         """Handle the rotate valves request."""
         solvent_valve_position = goal_handle.request.valve_position[0]
@@ -308,7 +298,6 @@ class FirmwareNode(Node):
 
         return result
 
-    # Oven related code {#09513c, 30}
     def handle_cartridge_oven_status_packet(self, packet):
         """Deserialize the cartridge temperature packet and publishing it to the ROS2 topic."""
         # Extract the values from the packet
@@ -413,12 +402,15 @@ class FirmwareNode(Node):
         self.transmit_queue.put(packet_string)
 
 
-def signal_handler(signum, frame):
-    firmware_node.close()
-    rclpy.shutdown()
+    def signal_handler(self, signum, frame):
+        """Handle the signal interrupt."""
+        self.close()
+        rclpy.shutdown()
+        sys.exit(0)
 
 
 def main():
+    """Main function to start the firmware node."""
     # Start ROS 2 client library
     rclpy.init()
 
@@ -430,7 +422,7 @@ def main():
     executor.add_node(firmware_node)
 
     # Register SIGINT handler for Ctrl+C
-    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGINT, firmware_node.signal_handler)
 
     # Spin in a separate thread
     # executor_thread = Thread(target=executor.spin, daemon=True)

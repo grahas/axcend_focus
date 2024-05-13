@@ -1,3 +1,4 @@
+"""This module is used to simulate the legacy TCL interface."""
 import base64
 import json
 import os
@@ -7,13 +8,14 @@ import threading
 import time
 from datetime import datetime
 from functools import wraps
-from queue import Empty, Queue
+from queue import Queue
 
-from axcend_focus_legacy_compatibility_layer.legacy_compatibility_interface_node import LegacyCompatibilityInterface
 import rclpy
-from flask import Flask, g, jsonify, request
-from rclpy.node import Node
+from flask import Blueprint, Flask, jsonify, request
 from std_msgs.msg import String
+
+from axcend_focus_legacy_compatibility_layer.legacy_compatibility_interface_node import \
+    LegacyCompatibilityInterface
 
 app = Flask(__name__)
 legacy_compatibility_interface = None
@@ -29,11 +31,18 @@ system_state = {
     "firmware_UART_write_queue": Queue(),
 }
 
+# Create a blueprint for the RPC2 routes
+rpc2_blueprint = Blueprint("rpc2", __name__)
+
 
 def generate_key(user, ip):
+    """Generate a key for the reservation system."""
     random_data = random.getrandbits(128)
     key_prefix = "FocusLC"
-    key_suffix = "Copyright 2019, Axcend LLC, All Rights Reserved. I understand unauthorized use is illegal."
+    key_suffix = (
+        "Copyright 2019, Axcend LLC, All Rights Reserved."
+        "I understand unauthorized use is illegal."
+    )
     encoded_key = base64.b64encode(
         f"{random_data}:{key_prefix}:{user}:{ip}:{key_suffix}".encode()
     ).decode()
@@ -42,12 +51,13 @@ def generate_key(user, ip):
 
 def update_legacy_compatibility_interface_reference(interface):
     """Update the reference to the legacy compatibility interface.
-    
+
     This function is used to update the reference to the legacy compatibility interface
     in the test fixtures.
     """
     global legacy_compatibility_interface
     legacy_compatibility_interface = interface
+
 
 def generate_json_response(method, result):
     """Generate a JSON response with the method, timestamp, microseconds, and result."""
@@ -62,6 +72,7 @@ def generate_json_response(method, result):
 
 
 def check_key(func):
+    """Check the key for the reservation system."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         key = request.args.get("key")
@@ -78,10 +89,11 @@ def check_key(func):
 
 @app.route("/")
 def home():
+    """Home route."""
     return "Hello, World!"
 
 
-@app.route("/IsReserved", methods=["GET"])
+@rpc2_blueprint.route("/IsReserved", methods=["GET"])
 def is_reserved():
     """Check if the system is reserved."""
     if system_state["is_reserved"]:
@@ -96,7 +108,7 @@ def is_reserved():
     return generate_json_response("IsReserved", result)
 
 
-@app.route("/ReserveSystem", methods=["GET"])
+@rpc2_blueprint.route("/ReserveSystem", methods=["GET"])
 def reserve_system():
     """Reserve the system. User is sent as query parameter."""
     user = request.args.get("user")
@@ -119,7 +131,7 @@ def reserve_system():
     return generate_json_response("ReserveSystem", info)
 
 
-@app.route("/ReleaseSystem", methods=["GET"])
+@rpc2_blueprint.route("/ReleaseSystem", methods=["GET"])
 def release_system():
     """Release the system. Key is sent a query parameter."""
     key = request.args.get("key")
@@ -144,13 +156,13 @@ def release_system():
     return generate_json_response("ReleaseSystem", info)
 
 
-@app.route("/machinename", methods=["GET"])
+@rpc2_blueprint.route("/machinename", methods=["GET"])
 def machine_name():
     """Return the hostname of the machine."""
     return generate_json_response("machinename", socket.gethostname())
 
 
-@app.route("/version", methods=["GET"])
+@rpc2_blueprint.route("/version", methods=["GET"])
 def version():
     """Return the version of the system."""
     return generate_json_response(
@@ -158,7 +170,7 @@ def version():
     )
 
 
-@app.route("/read", methods=["GET"])
+@rpc2_blueprint.route("/read", methods=["GET"])
 @check_key
 def read():
     """Return all the messages received from the firmware_UART_read topic."""
@@ -174,28 +186,38 @@ def read():
     return generate_json_response("read", results)
 
 
-@app.route("/write", methods=["GET"])
+@rpc2_blueprint.route("/write", methods=["GET"])
 @check_key
 def write():
-    """Write the message to the firmware_UART_write topic."""
+    """Write the message to the firmware_UART_write topic.
+
+    The message is split into 32 character chunks and sent to the firmware.
+    It will return the number of bytes sent to the firmware."""
     message = request.args.get("data")
+    bytes_sent = 0
+    if message is None:
+        return generate_json_response("write", bytes_sent)
     msg = String()
     msg.data = message
 
     # Split the message into 32 character chunks and write them to the topic
     for i in range(0, len(message), 32):
-        msg.data = message[i : i + 32]
+        msg.data = message[i: i + 32]
         msg.data = "proto1 " + msg.data
         system_state["firmware_UART_write_queue"].put(msg)
+        bytes_sent += len(msg.data)
 
-    return generate_json_response("write", "OK")
+    return generate_json_response("write", bytes_sent)
 
 
-@app.route("/cartridge_write", methods=["GET"])
+@rpc2_blueprint.route("/cartridge_write", methods=["GET"])
 @check_key
 def cartridge_write():
     """This route is used to write the cartridge configuration to the firmware."""
     message = request.args.get("data")
+    bytes_sent = 0
+    if message is None:
+        return generate_json_response("cartridge_write", bytes_sent)
     msg = String()
     msg.data = "cartridge_config " + message
     system_state["firmware_UART_write_queue"].put(msg)
@@ -203,24 +225,24 @@ def cartridge_write():
     return generate_json_response("cartridge_write", msg.data)
 
 
-@app.route("/cartridge_config", methods=["GET"])
+@rpc2_blueprint.route("/cartridge_config", methods=["GET"])
 def cartridge_config():
     """This route is used to read the cartridge configuration from the firmware."""
     results = legacy_compatibility_interface.request_cartridge_memory()
     return generate_json_response("cartridge_config", results)
 
 
-@app.route("/machinestate", methods=["GET"])
+@rpc2_blueprint.route("/machinestate", methods=["GET"])
 def machine_state():
     """Return the machine state."""
     state_string = legacy_compatibility_interface.get_machine_state_string()
-    return generate_json_response("machinestate", {
-        "state": state_string, 
-        "locked": "1" if system_state["is_reserved"] else "0"}
+    return generate_json_response(
+        "machinestate",
+        {"state": state_string, "locked": "1" if system_state["is_reserved"] else "0"},
     )
 
 
-@app.route("/clear", methods=["GET"])
+@rpc2_blueprint.route("/clear", methods=["GET"])
 @check_key
 def clear():
     """Clear the serial port"""
@@ -229,36 +251,49 @@ def clear():
     return generate_json_response("clear", "Cleared")
 
 
-@app.route("/deviceconfig", methods=["GET"])
+@rpc2_blueprint.route("/deviceconfig", methods=["GET"])
 def device_config():
     """Return the device configuration."""
     system_parameters_file_path = os.environ.get("SYS_PARAMS_FILE")
 
-    # Get the json file
-    with open(system_parameters_file_path, "r") as file:
+    # Get the json file with explicit encoding
+    with open(system_parameters_file_path, "r", encoding="utf-8") as file:
         data = json.load(file)
         del data["OutputEvents"]
     return generate_json_response("deviceconfig", data)
 
 
-@app.route("/update_system_parameters", methods=["GET"])
+@rpc2_blueprint.route("/update_system_parameters", methods=["GET"])
 @check_key
 def update_system_parameters():
     """Update the system parameters."""
-    legacy_compatibility_interface.request_system_parameters_update()
-    return generate_json_response("update_system_parameters", "UPDATED SYSTEM PARAMETERS")
+    results = legacy_compatibility_interface.request_system_parameters_update()
+    if results:
+        return generate_json_response(
+            "update_system_parameters", "UPDATED SYSTEM PARAMETERS"
+        )
+
+    return generate_json_response(
+        "update_system_parameters", "FAILED TO UPDATE SYSTEM PARAMETERS"
+    )
+
+
+# Register the blueprint after defining the routes
+app.register_blueprint(rpc2_blueprint, url_prefix="/RPC2")
 
 
 def main():
+    """Main function to start the Flask server and the ROS2 node."""
     rclpy.init()
+    global legacy_compatibility_interface
     legacy_compatibility_interface = LegacyCompatibilityInterface(
         system_state["firmware_UART_write_queue"],
         system_state["firmware_UART_read_queue"],
     )
 
-    stop_event = threading.Event()
-
-    flask_thread = threading.Thread(target=app.run, kwargs={"use_reloader": False})
+    flask_thread = threading.Thread(
+        target=app.run, kwargs={"use_reloader": False, "port": 8000}
+    )
     flask_thread.start()
 
     # Start the publish thread
@@ -269,6 +304,7 @@ def main():
 
     rclpy.spin(legacy_compatibility_interface)
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

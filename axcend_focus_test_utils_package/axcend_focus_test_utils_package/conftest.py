@@ -1,22 +1,19 @@
-from unittest.mock import Mock
+"""Conftest file for the axcend_focus_test_utils_package package."""
+import os
+from collections import deque
+from threading import Thread
 
 import pytest
-import os
-import time
-from collections import deque
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
 from sensor_msgs.msg import Temperature
-from threading import Thread
-from serial import SerialTimeoutException
+from std_msgs.msg import String
 
-from axcend_focus_ros2_firmware_bridge.firmware_bridge import (
-    FirmwareNode,
-    DataAcquisitionState,
-)
-from axcend_focus_custom_interfaces.srv import CartridgeMemoryReadWrite
 from axcend_focus_custom_interfaces.msg import PumpStatus
+from axcend_focus_custom_interfaces.srv import CartridgeMemoryReadWrite
+from axcend_focus_ros2_firmware_bridge.firmware_bridge import (
+    DataAcquisitionState, FirmwareNode)
+from axcend_focus_test_utils_package.mock_serial_port import mock_serial_port
 
 # Get the current directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -29,6 +26,9 @@ json_file_path = os.path.join(current_dir, relative_path)
 
 # Set the SYS_PARAMS_FILE environment variable
 os.environ["SYS_PARAMS_FILE"] = json_file_path
+
+# Set the ENVIRONMENT environment variable
+os.environ['ENVIRONMENT'] = 'development'
 
 
 class ExampleNode(Node):
@@ -77,47 +77,10 @@ class ExampleNode(Node):
         else:
             self.get_logger().error("Service call failed!")
             return None
-        
+
     def pump_status_callback(self, msg):
         """Callback function for the pump status subscriber."""
         self.pump_status_cache = msg
-
-
-@pytest.fixture
-def mock_serial_port():
-    """Mock the serial port for testing."""
-    mock_port = Mock()
-
-    mock_port.write_data = []
-    mock_port.read_data = []
-    mock_port.start_time = None
-
-    def mock_readline():
-        """Read data from the serial read buffer."""
-        if not mock_port.read_data:
-            if mock_port.start_time is None:
-                mock_port.start_time = time.time()
-            elif time.time() - mock_port.start_time > 0.5:
-                raise SerialTimeoutException
-            return b""
-        else:
-            mock_port.start_time = None
-            return mock_port.read_data.pop(0)
-
-    def mock_write(data):
-        """Add data to the serial write buffer."""
-        mock_port.write_data.append(data)
-
-    def add_to_read_buffer(data):
-        """Add data to the serial read buffer."""
-        mock_port.read_data.append(data)
-
-    mock_port.readline = mock_readline
-    mock_port.write = mock_write
-    mock_port.close = Mock()  # Add a close method
-    mock_port.add_to_read_buffer = add_to_read_buffer
-
-    yield mock_port
 
 
 @pytest.fixture
@@ -130,7 +93,7 @@ def nodes(mock_serial_port):
     executor = rclpy.executors.MultiThreadedExecutor()
 
     # Add nodes to executor
-    firmware_node = FirmwareNode(serial_port=mock_serial_port)
+    firmware_node = FirmwareNode(firmware_serial_port=mock_serial_port)
     test_node = ExampleNode()
     executor.add_node(firmware_node)
     executor.add_node(test_node)

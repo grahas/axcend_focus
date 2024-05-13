@@ -1,12 +1,17 @@
+"""Node provides access to the firmware_bridge RX and TX topics."""
+
 import threading
 from queue import Empty, Queue
 
-import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from axcend_focus_custom_interfaces.srv import CartridgeMemoryReadWrite, SystemParametersUpdate
+from axcend_focus_custom_interfaces.srv import (
+    CartridgeMemoryReadWrite,
+    SystemParametersUpdate,
+)
 from axcend_focus_custom_interfaces.msg import PumpStatus
+
 
 class LegacyCompatibilityInterface(Node):
     """Node provides access to the firmware_bridge RX and TX topics."""
@@ -44,7 +49,6 @@ class LegacyCompatibilityInterface(Node):
         )
         self.pump_status_cache = PumpStatus()
 
-
     def firmware_UART_read_callback(self, msg):
         """Callback function for the firmware_bridge TX topic."""
         # Remove the proto1 prefix
@@ -53,7 +57,6 @@ class LegacyCompatibilityInterface(Node):
 
     def publish_to_firmware_UART_write_thread(self):
         """Publish messages from the queue to the firmware_UART_write topic."""
-        msg = String()
         while not self.shutdown_event.is_set():
             try:
                 msg = self.write_queue.get(timeout=0.5)
@@ -61,53 +64,78 @@ class LegacyCompatibilityInterface(Node):
             except Empty:
                 continue
 
-    def request_cartridge_memory(self) -> dict:
+    def request_cartridge_memory(self, max_retries=10) -> dict:
         """Send a request to the cartridge_memory_read_write service."""
         cartridge_memory_request = CartridgeMemoryReadWrite.Request()
         cartridge_memory_request.command = "read"
-        while not self.cartridge_memory_read_write_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Service not available, waiting again...")
+        retries = 0
+        while not self.cartridge_memory_read_write_client.wait_for_service(
+            timeout_sec=1.0
+        ):
+            if retries >= max_retries:
+                self.get_logger().error("Service not available after maximum retries.")
+                return {}
+            if retries % 5 == 0:  # Log every 5 retries
+                self.get_logger().info("Service not available, waiting again...")
+            retries += 1
 
-        future = self.cartridge_memory_read_write_client.call_async(cartridge_memory_request)
-        rclpy.spin_until_future_complete(self, future)
+        # Get the cartridge memory data
+        response = self.cartridge_memory_read_write_client.call(
+            cartridge_memory_request
+        )
 
-        results_dict = {field.lstrip('_'): getattr(future.result(), field) for field in future.result().__slots__}
+        # Convert it to a dictionary
+        fields = (
+            response.get_fields_and_field_types().keys()
+        )  # Get the fields of the response message
+        results_dict = {
+            field: getattr(response, field)
+            for field in fields
+            if hasattr(response, field)
+        }  # Convert the response message to a dictionary
 
-        if future.result() is not None:
-            return results_dict
-        else:
-            self.get_logger().error("Service call failed!")
-            return None
-        
-    def request_system_parameters_update(self) -> bool:
+        # Return the dictionary
+        return results_dict
+
+    def request_system_parameters_update(self, max_retries=10) -> bool:
         """Send a request to the system_parameters_update service."""
         system_parameters_update_request = SystemParametersUpdate.Request()
-        while not self.system_parameters_update_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Service not available, waiting again...")
+        retries = 0
+        while not self.system_parameters_update_client.wait_for_service(
+            timeout_sec=1.0
+        ):
+            if retries >= max_retries:
+                self.get_logger().error("Service not available after maximum retries.")
+                return False
+            if retries % 5 == 0:  # Log every 5 retries
+                self.get_logger().info("Service not available, waiting again...")
+            retries += 1
 
-        future = self.system_parameters_update_client.call_async(system_parameters_update_request)
-        rclpy.spin_until_future_complete(self, future)
+        response = self.system_parameters_update_client.call(
+            system_parameters_update_request
+        )
 
-        if future.result() is not None:
-            return future.result().success
-        else:
-            self.get_logger().error("Service call failed!")
-            return None
-        
+        if not hasattr(response, "success"):
+            self.get_logger().error("Response does not contain 'success' attribute.")
+            return False
+
+        return response.success
+
     def pump_status_callback(self, msg):
         """Update the pump status cache."""
         self.pump_status_cache = msg
 
     def get_machine_state_string(self) -> str:
         """Return the machine state as a string."""
-        results = ("unused {\n} "
-                   f"flow {self.pump_status_cache.flow_rate} "
-                   f"streamId {self.pump_status_cache.header.stamp.sec} "
-                   f"phase {self.pump_status_cache.phase} "
-                   "packetId DV "
-                   f"positionA {self.pump_status_cache.position[0]} "
-                   f"pressureA {self.pump_status_cache.pressure[0]} "
-                   f"positionB {self.pump_status_cache.position[1]} "
-                   f"pressureB {self.pump_status_cache.pressure[1]}"
-                   )
+        results = (
+            "unused {\n} "
+            f"flow {self.pump_status_cache.flow_rate} "
+            f"streamId {self.pump_status_cache.header.stamp.sec} "
+            f"phase {self.pump_status_cache.phase} "
+            "packetId DV "
+            f"positionA {self.pump_status_cache.position[0]} "
+            f"pressureA {self.pump_status_cache.pressure[0]} "
+            f"positionB {self.pump_status_cache.position[1]} "
+            f"pressureB {self.pump_status_cache.pressure[1]}"
+        )
         return results

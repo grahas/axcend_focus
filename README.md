@@ -114,9 +114,11 @@ rosdep install --from-paths src --ignore-src --rosdistro humble -y
 
 # Test a specific command
 
-test the legacy_compatibility_layer: colcon test --packages-select axcend_focus_legacy_compatibility_layer --event-handlers console_direct+
+test the legacy_compatibility_layer: 
+colcon test --packages-select axcend_focus_legacy_compatibility_layer --event-handlers console_direct+
 
-test the packet transcoder: colcon test --packages-select axcend_focus_ros2_firmware_bridge --event-handlers console_direct+
+test the packet transcoder: 
+colcon test --packages-select axcend_focus_ros2_firmware_bridge --event-handlers console_direct+
 
 To test without rebuilding in ROS2 you can  use
 colcon build --symlink-install
@@ -125,7 +127,18 @@ colcon build --symlink-install
 colcon build --packages-select axcend_focus_ros2_firmware_bridge 
 colcon build --packages-select axcend_focus_custom_interfaces 
 colcon build --packages-select axcend_focus_launch
+colcon build --packages-select axcend_focus_test_utils --symlink-install
 colcon build --symlink-install
 
 # Launch the nodes
+export ENVIRONMENT=development
+export ENVIRONMENT=production
 ros2 launch axcend_focus_launch application_launch.py
+
+# Openinging the workspace
+open from the axcend_focus directory that has all the packages as the root of the workspace.
+cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws
+source install/setup.bash
+cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus
+code .
+This will make all the paths work

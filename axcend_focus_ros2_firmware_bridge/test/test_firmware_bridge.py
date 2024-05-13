@@ -32,11 +32,11 @@ packet_transcoder = packet_definitions.PacketTranscoder()
 def test_heart_beat(nodes):
     """Verify that the firmware is able to respond to the heartbeat packet."""
     # Unpack the test objects from the fixture
-    mock_serial_port = nodes['mock_serial_port']
+    serial_port = nodes['mock_serial_port']
     firmware_node = nodes['firmware_node']
     
     # Insert a packet into the read buffer
-    mock_serial_port.add_to_read_buffer(packet_transcoder.create_heartbeat_packet().encode())
+    serial_port.add_to_read_buffer(packet_transcoder.create_heartbeat_packet().encode())
     time.sleep(1)
     assert (time.time() - firmware_node.last_heartbeat_time) < firmware_node.heartbeat_timeout
 
@@ -44,7 +44,7 @@ def test_heart_beat(nodes):
 def test_firmware_UART_write_topic(nodes):
     """Verify that the firmware is able to receive messages from firmware_UART_write topic."""
     # Unpack the test objects from the fixture
-    mock_serial_port = nodes['mock_serial_port']
+    serial_port = nodes['mock_serial_port']
     test_node = nodes['test_node']
 
     # Publish a message to the serial port TX topic
@@ -56,18 +56,18 @@ def test_firmware_UART_write_topic(nodes):
     time.sleep(1)
 
     # Check that the message was sent to the serial port
-    assert msg.data.encode() in mock_serial_port.write_data
+    assert msg.data.encode() in serial_port.write_data
 
 
 def test_cartridge_memory_read_write(nodes):
     """Verify that the firmware is able to read and write to the cartridge memory."""
     # Unpack the test objects from the fixture
-    mock_serial_port = nodes['mock_serial_port']
+    serial_port = nodes['mock_serial_port']
     test_node = nodes['test_node']
 
     # Create a mock cartridge memory packet to place in the read queue
     cartridge_config_packet = packet_transcoder.create_cartridge_memory_write_packet({"version": 3})
-    mock_serial_port.add_to_read_buffer(cartridge_config_packet)
+    serial_port.add_to_read_buffer(cartridge_config_packet)
 
     # Give time for read buffer to process
     time.sleep(1)
@@ -85,7 +85,7 @@ def test_cartridge_memory_read_write(nodes):
 def test_pump_status(nodes):
     """Verify that the firmware is able to send the pump status."""
     # Unpack the test objects from the fixture
-    mock_serial_port = nodes['mock_serial_port']
+    serial_port = nodes['mock_serial_port']
     test_node = nodes['test_node']
 
     # Create a mock pump status packet to place in the read queue
@@ -93,7 +93,7 @@ def test_pump_status(nodes):
     pump_status = packet_transcoder.create_dummy_pump_status_packet(phase)
 
     # Add the pump status packet to the read buffer
-    mock_serial_port.add_to_read_buffer(pump_status)
+    serial_port.add_to_read_buffer(pump_status)
 
     # Give time for read buffer to process
     time.sleep(3)
