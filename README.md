@@ -18,11 +18,13 @@ source install/setup.bash
 
 1. cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws
 2. rm -r build install log
+3. cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus
+4. code .
 
 ### Build Package
-
-1. colcon build --packages-select axcend_focus_custom_interfaces
-2. colcon build --packages-select axcend_focus_front_panel_button
+1. cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws
+2. colcon build --packages-select axcend_focus_custom_interfaces
+3. colcon build --packages-select axcend_focus_front_panel_button
 
 ### Source Workspace
 1. source install/setup.bash 
