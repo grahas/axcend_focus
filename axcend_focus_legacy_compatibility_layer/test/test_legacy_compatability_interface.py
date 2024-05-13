@@ -239,7 +239,7 @@ def test_cartridge_write(client, nodes_with_legacy):
 
     # Check the response
     assert response.status_code == 200
-    assert dummy_packet.encode() in response.data
+    assert len(dummy_packet) == response.json['result']
 
     # Check the data in the firmware_UART_write_queue
     assert dummy_packet.encode() in serial_port.write_data

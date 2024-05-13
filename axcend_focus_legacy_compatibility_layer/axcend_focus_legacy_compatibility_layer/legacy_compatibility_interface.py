@@ -221,8 +221,9 @@ def cartridge_write():
     msg = String()
     msg.data = "cartridge_config " + message
     system_state["firmware_UART_write_queue"].put(msg)
+    bytes_sent = len(msg.data)
 
-    return generate_json_response("cartridge_write", msg.data)
+    return generate_json_response("cartridge_write", bytes_sent)
 
 
 @rpc2_blueprint.route("/cartridge_config", methods=["GET"])

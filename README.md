@@ -24,6 +24,9 @@ source install/setup.bash
 1. colcon build --packages-select axcend_focus_custom_interfaces
 2. colcon build --packages-select axcend_focus_front_panel_button
 
+### Source Workspace
+1. source install/setup.bash 
+
 ### Update Changelog
 
 1. catkin_generate_changelog
