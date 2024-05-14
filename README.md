@@ -31,7 +31,7 @@ source install/setup.bash
 
 ### Update Changelog
 0. cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus
-1. catkin_generate_changelog -a
+1. catkin_generate_changelog
 2. Commit the files
 3. catkin_prepare_release
 4. bloom-release --rosdistro foxy axcend_focus
