@@ -30,11 +30,12 @@ source install/setup.bash
 1. source install/setup.bash 
 
 ### Update Changelog
-
-1. catkin_generate_changelog
-2. catkin_prepare_release
-3. bloom-release --rosdistro foxy axcend_focus
-4. https://github.com/grahas/axcend_focus-release.git
+0. cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus
+1. catkin_generate_changelog -a
+2. Commit the files
+3. catkin_prepare_release
+4. bloom-release --rosdistro foxy axcend_focus
+5. https://github.com/grahas/axcend_focus-release.git
 
 https://github.com/grahas/axcend_focus.git
 
@@ -61,6 +62,9 @@ In build-server VM ->
 ### Bake Changes
 
 1. bitbake axcend-focus-custom-interfaces
+
+### Git repo
+1. Change git repo back to private
 
 ### Copy Changes to Board
 
