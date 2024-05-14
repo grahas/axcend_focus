@@ -2,8 +2,8 @@
 Changelog for package axcend_focus_front_panel_button
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+3.1.1 (2024-05-14)
+------------------
 * updates
 * update packages
 * Contributors: Graham Harrison, grahas

@@ -2,8 +2,8 @@
 Changelog for package axcend_focus_test_utils_package
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+3.1.1 (2024-05-14)
+------------------
 * updates
 * Bug fixes - updates
 * remove junk
