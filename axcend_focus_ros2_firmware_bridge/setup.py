@@ -7,9 +7,6 @@ setup(
     version="3.1.2",
     packages=[package_name],
     package_data={
-        package_name: [
-            "*.so",
-        ],
     },
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
