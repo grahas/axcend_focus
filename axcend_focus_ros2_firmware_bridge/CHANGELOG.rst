@@ -2,8 +2,8 @@
 Changelog for package axcend_focus_ros2_firmware_bridge
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+3.1.3 (2024-05-15)
+------------------
 * updates
 * Contributors: Graham Harrison
 
