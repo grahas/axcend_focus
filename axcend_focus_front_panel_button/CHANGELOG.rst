@@ -2,6 +2,9 @@
 Changelog for package axcend_focus_front_panel_button
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+
 3.1.2 (2024-05-14)
 ------------------
 
