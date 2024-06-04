@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'flask'],
+    install_requires=['setuptools', 'flask', 'flask_cors', 'rclpy', 'std_msgs'],
     zip_safe=True,
     maintainer='ubuntu',
     maintainer_email='graham.harrison@axcendcorp.com',
