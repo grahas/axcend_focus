@@ -30,7 +30,7 @@ class Field(ctypes.Structure):
 
 
 class Packet(ctypes.Union):
-    _fields_ = [("raw", ctypes.c_uint8 * PACKET_MAX_LENGTH), ("field", Field)]
+    _fields_ = [("raw", ctypes.c_uint8 * PACKET_MAX_LENGTH), ("fields", Field)]
 
 
 class _PhaseInfoBits(ctypes.Structure):
@@ -65,6 +65,19 @@ class _PressureBits(ctypes.Structure):
 
 class PressureInfo(ctypes.Union):
     _fields_ = [("raw", ctypes.c_uint8 * PACKET_MAX_LENGTH), ("fields", _PressureBits)]
+
+
+class _UV_data(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("channel_ID", ctypes.c_uint8),
+        ("time_stamp", ctypes.c_uint32),
+        ("value", ctypes.c_uint32),
+    ]
+
+
+class UVData(ctypes.Union):
+    _fields_ = [("raw", ctypes.c_uint8 * 9), ("fields", _UV_data)]
 
 
 class SystemParametersFields(ctypes.Structure):
@@ -215,14 +228,25 @@ class PacketTranscoder:
 
         packet_transcoder.packetDecode_oven_data.argtypes = [
             ctypes.POINTER(Packet),
-            ctypes.POINTER(ctypes.c_uint8),
-            ctypes.POINTER(ctypes.c_uint8),
             ctypes.POINTER(ctypes.c_uint32),
             ctypes.POINTER(ctypes.c_uint8),
             ctypes.POINTER(ctypes.c_uint32),
             ctypes.POINTER(ctypes.c_uint8),
+            ctypes.POINTER(ctypes.c_uint16),
         ]
         packet_transcoder.packetDecode_oven_data.restype = ctypes.c_int
+
+        packet_transcoder.packetEncode_oven_data.argtypes = [
+            ctypes.c_uint8,
+            ctypes.c_uint8,
+            ctypes.POINTER(Packet),
+            ctypes.c_uint32,
+            ctypes.c_uint8,
+            ctypes.c_uint32,
+            ctypes.c_uint8,
+            ctypes.c_uint16,
+        ]
+        packet_transcoder.packetEncode_oven_data.restype = ctypes.c_int
 
         return packet_transcoder
 
@@ -343,21 +367,46 @@ class PacketTranscoder:
 
     def create_valve_rotate_packet(
         self, solvent_valve_position: int, injection_valve_position: int
-    ) -> str:
+    ) -> bytes:
         """Create a rotate valve packet."""
         packet = Packet()
 
         # Encode the packet
         packet_ID = ctypes.c_uint8(ord("C"))
         type_ID = ctypes.c_uint8(ord("V"))
-        valve_position = (injection_valve_position << 2) | solvent_valve_position
+        valve_position = (injection_valve_position << 4) | solvent_valve_position
         # Call packetEncode_16_16_b
         self.packet_transcoder.packetEncode_16_16_b(
             packet_ID,
             type_ID,
             ctypes.byref(packet),
-            ctypes.c_uint16(0),
+            ctypes.c_uint16(2),
             ctypes.c_uint16(valve_position),
+        )
+
+        # Serialize the packet into a hex encoded string
+        packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
+        return packet_string
+    
+    def create_pump_positioning_packet(self, fill_volume_a, fill_volume_b) -> bytes:
+        """Create a pump positioning packet.
+
+        Args:
+            fill_volume_a: The fill volume for pump A in uL.
+            fill_volume_b: The fill volume for pump B in uL.
+        """
+        packet = Packet()
+
+        # Encode the packet
+        packet_ID = ctypes.c_uint8(ord("C"))
+        type_ID = ctypes.c_uint8(ord("F"))
+        # Call packetEncode_16_16_b
+        self.packet_transcoder.packetEncode_16_16_b(
+            packet_ID,
+            type_ID,
+            ctypes.byref(packet),
+            ctypes.c_uint16(fill_volume_a * 10), # Firmware takes value in 0.1 uL increments
+            ctypes.c_uint16(fill_volume_b * 10), # Firmware takes value in 0.1 uL increments
         )
 
         # Serialize the packet into a hex encoded string
@@ -381,6 +430,27 @@ class PacketTranscoder:
         packet_string = b"cartridge_config " + "DC".encode().hex().upper().encode()
         packet_string += bytes(packet.raw).hex().upper().encode()
 
+        return packet_string
+    
+    def create_cartridge_memory_read_packet(self) -> str:
+        """Create a cartridge memory read packet."""
+        packet = Packet()
+
+        GET_CARTRIDGE_CONFIGURATION_COMMAND_CODE = 0x1
+
+        # Make a packet
+        packet_ID = ctypes.c_uint8(ord("C"))
+        type_ID = ctypes.c_uint8(ord("A"))
+        self.packet_transcoder.packetEncode_8_32(
+            ctypes.byref(packet),
+            packet_ID,
+            type_ID,
+            ctypes.c_uint8(GET_CARTRIDGE_CONFIGURATION_COMMAND_CODE),
+            ctypes.c_uint32(0),
+        )
+
+        # Serialize the packet into a hex encoded string
+        packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
         return packet_string
 
     def create_data_acquisition_state_packet(self, state: DataAcquisitionState) -> str:
@@ -415,13 +485,50 @@ class PacketTranscoder:
         packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
         return packet_string
 
+    def create_dummy_UV_data_packet(self, channel_id, time_stamp, value) -> Packet:
+        """Create a mock UV data packet."""
+        packet = Packet()
+        packet.fields.packet_ID = ctypes.c_uint8(ord("D"))
+        packet.fields.type_ID = ctypes.c_uint8(ord("U"))
+
+        # Make a packet
+        UV_data = UVData()
+        UV_data.fields.channel_ID = channel_id
+        UV_data.fields.time_stamp = time_stamp
+        UV_data.fields.value = value
+
+        # Copy the UV data into the packet
+        ctypes.memmove(packet.fields.data, UV_data.raw, len(UV_data.raw))
+
+        # Return the packet object
+        return packet
+    
+    def create_cartridge_oven_status_packet(self, sequence_number, oven_state, temperature, power_output, set_point) -> str:
+        """Create a cartridge oven status packet."""
+        packet = Packet()
+
+        # Make a packet
+        self.packet_transcoder.packetEncode_oven_data(
+            ctypes.c_uint8(ord("D")),
+            ctypes.c_uint8(ord("T")),
+            ctypes.byref(packet),
+            ctypes.c_uint32(sequence_number),
+            ctypes.c_uint8(oven_state),
+            ctypes.c_uint32(temperature),
+            ctypes.c_uint8(power_output),
+            ctypes.c_uint16(set_point),
+        )
+
+        return PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
+
     def parse_values_oven_status_packet(self, packet: Packet) -> list:
         """Parse the values from the oven packet."""
         # Extract the data from the packet
         sequence_number = ctypes.c_uint32(0)
         oven_state = ctypes.c_uint8(0)
-        temperature = ctypes.c_uint16(0)
+        temperature = ctypes.c_uint32(0)
         power_output = ctypes.c_uint8(0)
+        set_point = ctypes.c_uint16(0)
 
         self.packet_transcoder.packetDecode_oven_data(
             ctypes.byref(packet),
@@ -429,10 +536,12 @@ class PacketTranscoder:
             ctypes.byref(oven_state),
             ctypes.byref(temperature),
             ctypes.byref(power_output),
+            ctypes.byref(set_point),
         )
         temperature_as_float = temperature.value / 100
+        set_point = set_point.value / 100
 
-        return [sequence_number, oven_state, temperature_as_float, power_output]
+        return [sequence_number, oven_state, temperature_as_float, power_output, set_point]
 
     def parse_pressure_packet(self, packet: Packet) -> list:
         """Parse the pressure value from the packet."""
@@ -462,3 +571,19 @@ class PacketTranscoder:
             position_b,
             flow_rate,
         ]
+    
+    def parse_UV_data_packet(self, packet: Packet) -> list:
+        """Parse the UV data from the packet."""
+        # Create a UV data object
+        uv_data = UVData()
+
+        # Copy the packet data into the UV data object
+        ctypes.memmove(ctypes.byref(uv_data.raw), ctypes.byref(packet.fields.data), len(uv_data.raw))
+
+        # Extract the UV data values
+        channel_id = uv_data.fields.channel_ID
+        time_stamp = uv_data.fields.time_stamp
+        value = uv_data.fields.value
+
+        return [channel_id, time_stamp, value]
+
