@@ -32,7 +32,7 @@ def test_heart_beat(nodes):
     firmware_node = nodes["firmware_node"]
 
     # Insert a packet into the read buffer
-    serial_port.add_to_read_buffer(packet_transcoder.create_heartbeat_packet().encode())
+    serial_port.add_to_read_buffer(packet_transcoder.create_heartbeat_packet())
     time.sleep(1)
     assert (
         time.time() - firmware_node.last_heartbeat_time
@@ -47,7 +47,7 @@ def test_firmware_UART_write_topic(nodes):
 
     # Publish a message to the serial port TX topic
     msg = String()
-    msg.data = packet_transcoder.create_heartbeat_packet()
+    msg.data = packet_transcoder.create_heartbeat_packet().decode("UTF-8")
     test_node.firmware_UART_write_publisher.publish(msg)
 
     # Wait for the message to be processed
@@ -146,6 +146,19 @@ def test_firmware_serial_port_error_handling(nodes):
 
     # Check that the firmware is in the connected state
     assert firmware_node.firmware_serial_port_status_ok is True
+
+def test_front_panel_button_callback(nodes):
+    """Verify that the firmware is able to handle the front panel button callback."""
+    # Unpack the test objects from the fixture
+    serial_port = nodes["mock_serial_port"]
+    firmware_node = nodes["firmware_node"]
+
+    # Create a mock front panel button packet to place in the read queue
+    msg = String()
+    msg.data = "short press detected"
+    firmware_node.front_panel_button_callback(msg)
+
+
 
 # @pytest.fixture(scope="module")
 # def valves():

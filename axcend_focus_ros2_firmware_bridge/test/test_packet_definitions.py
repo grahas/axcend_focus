@@ -1,6 +1,6 @@
 import os
 import axcend_focus_ros2_firmware_bridge.packet_definitions as packet_definitions
-
+from axcend_focus_ros2_firmware_bridge.packet_definitions import TestPhase
 
 def test_packet_encoding():
     """Verify that the packet encoding library is working correctly."""
@@ -11,7 +11,7 @@ def test_packet_encoding():
     packet_transcoder = packet_definitions.PacketTranscoder()
 
     assert (
-        packet_transcoder.create_heartbeat_packet()
+        packet_transcoder.create_heartbeat_packet().decode("utf-8")
         == "proto1 4748000000000000000000000000000A"
     ), "Heartbeat packet not created correctly"
 
@@ -44,4 +44,14 @@ def test_parse_UV_data_packet():
     print("Channel ID: ", channel_id)
     print("Timestamp: ", time_stamp)
     print("Value: ", value)
+
+def test_parse_phase_packet():
+    """Check that we are able to parse a phase packet."""
+    # Create a phase packet
+    packet_transcoder = packet_definitions.PacketTranscoder()
+    packet_string = "proto1 444e010000000000000000000000000A"
+    [prefix, packet_type, packet] = packet_transcoder.decode_packet(packet_string)
+    results = packet_transcoder.parse_phase_packet(packet)
+
+    assert results == "Refill", "Phase not parsed correctly"
 

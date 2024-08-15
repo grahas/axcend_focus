@@ -34,6 +34,7 @@ from std_msgs.msg import Header, String
 from axcend_focus_ros2_firmware_bridge.packet_definitions import (
     DataAcquisitionState,
     PacketTranscoder,
+    AbortPacketReasons,
 )
 
 # Define some constants
@@ -149,11 +150,16 @@ class FirmwareNode(Node):
         self.transmit_thread_handler.start()
 
         # Create a publisher for raw serial data received from the firmware
-        self.publisher = self.create_publisher(String, "firmware_UART_read", 128)
+        self.firmware_UART_read_publisher = self.create_publisher(String, "firmware_UART_read", 128)
 
         # Create a subscriber for raw serial data to be sent to the firmware
         self.subscription = self.create_subscription(
             String, "firmware_UART_write", self.listener_callback, 128
+        )
+
+        # Create a subscriber for the front panel button
+        self.front_panel_button_subscription = self.create_subscription(
+            String, "front_panel_button", self.front_panel_button_callback, 10
         )
 
         # Create a service to handle the write cartridge memory command {#5fb8cf,5}
@@ -208,8 +214,8 @@ class FirmwareNode(Node):
             self.callback_pump_positioning,
         )
 
-        # Create a publisher for notification packets
-        self.notification_publisher = self.create_publisher(String, "notification", 10)
+        # Create a publisher for phase packets
+        self.phase_publisher = self.create_publisher(String, "device_phase", 10)
 
         # Initialize the firmware connection manager thread
         self.last_heartbeat_time = time.time()
@@ -227,7 +233,7 @@ class FirmwareNode(Node):
             ("proto1", "DT"): self.handle_cartridge_oven_status_packet,
             ("proto1", "DU"): self.handle_cartridge_UV_data_packet,
             ("proto1", "GT"): self.handle_get_oven_state,
-            ("proto1", "DN"): self.handle_notification,
+            ("proto1", "DN"): self.handle_phase,
             ("proto1", "DV"): self.handle_pressure_packet,
             ("proto1", "DR"): self.handle_pump_percent_composition_packet,
         }
@@ -242,10 +248,8 @@ class FirmwareNode(Node):
         This will send information about the hardware to the firmware.
         This will also collect initial readings from all the sensors.
         """
-
-        
         # Establish RPmsg port
-        self.transmit_queue.put(self.packet_transcoder.create_heartbeat_packet().encode())
+        self.transmit_queue.put(self.packet_transcoder.create_heartbeat_packet())
 
         # Send the firmware the system parameters packet
         system_parameters_packet = (
@@ -264,7 +268,7 @@ class FirmwareNode(Node):
         self.set_data_acquisition_state(DataAcquisitionState.DISABLED)
 
         # Send the firmware the heart beat packet
-        self.transmit_queue.put(self.packet_transcoder.create_heartbeat_packet().encode())
+        self.transmit_queue.put(self.packet_transcoder.create_heartbeat_packet())
 
     def firmware_connection_manager(self):
         """Check if the firmware is still alive."""
@@ -294,7 +298,7 @@ class FirmwareNode(Node):
                     self.initialize_firmware()
 
                 # Check if the firmware is alive
-                self.transmit_queue.put(heartbeat_packet.encode())
+                self.transmit_queue.put(heartbeat_packet)
                 if time.time() - self.last_heartbeat_time > self.heartbeat_timeout:
                     self.get_logger().error("Firmware is not responding!")
             else:
@@ -309,9 +313,12 @@ class FirmwareNode(Node):
         """Handle the heart beat packet."""
         self.last_heartbeat_time = time.time()
 
-    def handle_notification(self, packet):
+    def handle_phase(self, packet):
         """Receive the change in phase state packet."""
-        pass
+        phase = self.packet_transcoder.parse_phase_packet(packet)
+        msg = String()
+        msg.data = phase
+        self.phase_publisher.publish(msg)
 
     def handle_command_acknowledgement_packet(self, packet):
         """Handle the command acknowledgement packet."""
@@ -538,7 +545,7 @@ class FirmwareNode(Node):
                     # Publish the raw data
                     msg = String()
                     msg.data = received_data
-                    self.publisher.publish(msg)
+                    self.firmware_UART_read_publisher.publish(msg)
 
                     # Print for debugging
                     print(f"Received: {received_data}")
@@ -568,6 +575,17 @@ class FirmwareNode(Node):
     def listener_callback(self, msg):
         """Enqueue data to be written to the firmware."""
         self.transmit_queue.put(msg.data.encode())
+
+    def front_panel_button_callback(self, msg):
+        """Handle the front panel button press."""
+        if "short" in msg.data:
+            # Publish that an event packet was received
+            msg2 = String()
+            msg2.data = self.packet_transcoder.create_event_packet().decode('UTF-8').strip()
+            self.firmware_UART_read_publisher.publish(msg2)
+        elif "long" in msg.data:
+            # Write an abort packet to the firmware
+            self.transmit_queue.put(self.packet_transcoder.create_abort_packet(AbortPacketReasons.User))
 
     def close(self):
         """Clean up the firmware node."""

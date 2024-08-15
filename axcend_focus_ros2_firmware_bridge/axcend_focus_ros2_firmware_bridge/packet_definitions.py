@@ -5,10 +5,39 @@ from enum import Enum
 import os
 import json
 from ctypes.util import find_library
+from typing import Dict
 
 PACKET_MAX_LENGTH = 16  # bytes
+
 PROTO_PREFIX = b"proto1 "
 
+class AbortPacketReasons:
+    """Enum is responsible for defining the abort packet reasons."""
+    User = 0x0000
+    ResetRun = 0x0001
+    OverPressure = 0x0100
+    SolventExchangeError = 0x0300
+    ASyringeUnderLimit = 0xa000
+    ASyringeOverLimit = 0xa100
+    ASyringeAirLimit = 0xa200
+    BSyringeUnderLimit = 0xb000
+    BSyringeOverLimit = 0xb100
+    BSyringeAirLimit = 0xb200
+    HeartBeat = 0x0011
+    NoDVPackets = 0x0111
+    TemperatureHigh = 0xc000
+    PositionNotLive = 0xc0ab
+    PressureNotLive = 0xc2ab
+
+class TestPhase:
+    PhaseIdle = 0
+    PhaseRefill = 1
+    PhasePressurize = 2
+    PhaseEquilibrate = 3
+    PhaseRun = 4
+    PhaseFinalize = 5
+    PhaseService = 6
+    PhaseAbort = 7
 
 class DataAcquisitionState(Enum):
     """Enum is responsible for defining the data acquisition state."""
@@ -153,12 +182,13 @@ class CartridgeData(ctypes.Structure):
         ("samples_per_point", ctypes.c_uint8),
         ("bits_to_remove", ctypes.c_uint8),
     ]
-
+CARTRIDGE_MEMORY_SIZE = ctypes.sizeof(CartridgeData)
+CARTRIDGE_MEMORY_PACKET_HEADER_SIZE = 2
+CARTRIDGE_MEMORY_PACKET_SIZE = CARTRIDGE_MEMORY_PACKET_HEADER_SIZE + CARTRIDGE_MEMORY_SIZE
 
 class CartridgeMemory_t(ctypes.Union):
     _pack_ = 1
-    _fields_ = [("raw", ctypes.c_uint8 * 82), ("data", CartridgeData)]
-
+    _fields_ = [("raw", ctypes.c_uint8 * CARTRIDGE_MEMORY_SIZE), ("data", CartridgeData)]
 
 class PacketTranscoder:
     """Class that gives the ability to encode and decode packets."""
@@ -250,7 +280,7 @@ class PacketTranscoder:
 
         return packet_transcoder
 
-    def create_heartbeat_packet(self) -> str:
+    def create_heartbeat_packet(self) -> bytes:
         """Return the encoded heart beat packet."""
         packet = Packet()
 
@@ -260,10 +290,10 @@ class PacketTranscoder:
         self.packet_transcoder.packetEncode_0(packet_ID, type_ID, ctypes.byref(packet))
 
         # Serialize the packet into a hex encoded string
-        packet_string = "proto1 " + bytes(packet.raw).hex().upper()
+        packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
         return packet_string
 
-    def create_acknowledgement_packet(self) -> str:
+    def create_acknowledgement_packet(self) -> bytes:
         """Create a default acknowledgement packet hex encoded string."""
         ACK_VALUE = b"OK"
 
@@ -281,7 +311,7 @@ class PacketTranscoder:
         packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
         return packet_string
 
-    def create_system_parameters_packet(self) -> str:
+    def create_system_parameters_packet(self) -> bytes:
         """Make the system parameters packet."""
         # Variables
         system_parameters_file_path = os.environ.get("SYS_PARAMS_FILE")
@@ -322,6 +352,38 @@ class PacketTranscoder:
 
         return packet_string
 
+    def create_event_packet(self) -> bytes:
+        """Create an event packet."""
+        # Create a blank packet
+        packet = Packet()
+
+        # Encode the packet
+        packet_ID = ctypes.c_uint8(ord("D"))
+        type_ID = ctypes.c_uint8(ord("E"))
+        self.packet_transcoder.packetEncode_0(
+            packet_ID, type_ID, ctypes.byref(packet)
+        )
+
+        # Serialize the packet into a hex encoded string
+        packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
+        return packet_string
+
+    def create_abort_packet(self, reason: int) -> bytes:
+        """Create an abort packet."""
+        # Create a blank packet
+        packet = Packet()
+
+        # Encode the packet
+        packet_ID = ctypes.c_uint8(ord("C"))
+        type_ID = ctypes.c_uint8(ord("Q"))
+        self.packet_transcoder.packetEncode_16(
+            packet_ID, type_ID, ctypes.byref(packet), ctypes.c_uint16(reason)
+        )
+
+        # Serialize the packet into a hex encoded string
+        packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
+        return packet_string
+
     def decode_packet(self, packet_string: str) -> list:
         """Decode a hex string packet from the firmware and return the data as a dictionary."""
         # Convert the hex encoded data to byte array
@@ -348,14 +410,14 @@ class PacketTranscoder:
 
         elif prefix == "cartridge_config":
             assert (
-                len(data) == 84
-            ), "Invalid packet size for cartridge_config"  # 84 bytes
+                len(data) == CARTRIDGE_MEMORY_PACKET_SIZE
+            ), "Invalid packet size for cartridge_config"
 
             # Move the data into a packet object
             packet = CartridgeMemory_t()
 
             # Trim first two bytes of the data (packet ID and type ID)
-            data = data[2:]
+            data = data[CARTRIDGE_MEMORY_PACKET_HEADER_SIZE:]
 
             # Copy the bytes into the packet
             ctypes.memmove(ctypes.byref(packet.raw), data, len(data))
@@ -413,7 +475,7 @@ class PacketTranscoder:
         packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
         return packet_string
 
-    def create_cartridge_memory_write_packet(self, cartridge_data: dict) -> str:
+    def create_cartridge_memory_write_packet(self, cartridge_data: dict) -> bytes:
         """Create a cartridge memory write packet."""
         packet = CartridgeMemory_t()
 
@@ -432,7 +494,7 @@ class PacketTranscoder:
 
         return packet_string
     
-    def create_cartridge_memory_read_packet(self) -> str:
+    def create_cartridge_memory_read_packet(self) -> bytes:
         """Create a cartridge memory read packet."""
         packet = Packet()
 
@@ -453,7 +515,7 @@ class PacketTranscoder:
         packet_string = PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
         return packet_string
 
-    def create_data_acquisition_state_packet(self, state: DataAcquisitionState) -> str:
+    def create_data_acquisition_state_packet(self, state: DataAcquisitionState) -> bytes:
         """Create a data acquisition state packet."""
         # Create a blank packet
         packet = Packet()
@@ -468,7 +530,7 @@ class PacketTranscoder:
 
         return PROTO_PREFIX + bytes(packet.raw).hex().upper().encode()
 
-    def create_dummy_pump_status_packet(self, phase):
+    def create_dummy_pump_status_packet(self, phase) -> bytes:
         """Create a pump status packet."""
         packet = Packet()
 
@@ -554,7 +616,7 @@ class PacketTranscoder:
         )
 
         # Extract the pressure values
-        phase = pressure_info.fields.phase.raw
+        phase = pressure_info.fields.phase.bits.phase
         stream_id = pressure_info.fields.streamId
         pressure_a = pressure_info.fields.pressureA
         pressure_b = pressure_info.fields.pressureB
@@ -586,4 +648,19 @@ class PacketTranscoder:
         value = uv_data.fields.value
 
         return [channel_id, time_stamp, value]
+    
+    def parse_phase_packet(self, packet: Packet) -> str:
+        """Parse the phase value from the packet."""
+        phase_mapping: Dict[int, str] = {
+            TestPhase.PhaseIdle: "Idle",
+            TestPhase.PhaseRefill: "Refill",
+            TestPhase.PhasePressurize: "Pressurize",
+            TestPhase.PhaseEquilibrate: "Equilibrate",
+            TestPhase.PhaseRun: "Run",
+            TestPhase.PhaseFinalize: "Finalize",
+            TestPhase.PhaseService: "Service",
+            TestPhase.PhaseAbort: "Abort"
+        }
+        # Get the phase name from the mapping, default to "Unknown" if not found
+        return phase_mapping.get(packet.fields.unitId, "Unknown")
 

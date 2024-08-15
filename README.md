@@ -186,6 +186,8 @@ scp /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus/axcend_focus_le
 
 scp -o StrictHostKeyChecking=no /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus/axcend_focus_ros2_firmware_bridge/axcend_focus_ros2_firmware_bridge/firmware_bridge.py root@192.168.7.1:/usr/lib/python3.10/site-packages/axcend_focus_ros2_firmware_bridge/firmware_bridge.py
 
+scp -o StrictHostKeyChecking=no /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus/axcend_focus_front_panel_button/axcend_focus_front_panel_button/front_panel_button_controller.py root@192.168.7.1:/home/root/front_panel_button_controller.py
+
 
 
 server {
