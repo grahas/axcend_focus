@@ -2,6 +2,11 @@
 Changelog for package axcend_focus_launch
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* added new messages
+* Contributors: Graham Harrison
+
 3.1.4 (2024-06-04)
 ------------------
 

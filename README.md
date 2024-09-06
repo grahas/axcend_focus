@@ -22,7 +22,7 @@ source install/setup.bash
 4. code .
 
 ### Dependencies
-The code has a dependency that the libaxcend_packet.so is availible on the shared library search path. The library can be compiled by runinging the make command in the firmware repo and then you can add it to your system. 
+The code has a dependency that the libaxcend_packet.so is availible on the shared library search path. The library can be compiled by running the make command in the firmware repo and then you can add it to your system. 
 
 ### Open the IDE
 This is so that the vscode enviroment process is forked with the correct enviroment variables for the ROS2 workspace and will pass 

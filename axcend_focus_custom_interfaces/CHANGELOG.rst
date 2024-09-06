@@ -2,6 +2,12 @@
 Changelog for package axcend_focus_custom_interfaces
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* added new messages
+* updates
+* Contributors: Graham Harrison
+
 3.1.4 (2024-06-04)
 ------------------
 * updates
