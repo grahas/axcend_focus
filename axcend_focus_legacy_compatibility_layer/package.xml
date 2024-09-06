@@ -3,7 +3,7 @@
 <package format="3">
   <name>axcend_focus_legacy_compatibility_layer</name>
   <version>3.1.4</version>
-  <description>TODO: Package description</description>
+  <description>Provides compatability with legacy clients to interact with the device</description>
   <maintainer email="graham.harrison@axcendcorp.com">ubuntu</maintainer>
   <license>TODO: License declaration</license>
   

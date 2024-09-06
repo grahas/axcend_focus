@@ -3,7 +3,7 @@
 <package format="3">
   <name>axcend_focus_custom_interfaces</name>
   <version>3.1.4</version>
-  <description>TODO: Package description</description>
+  <description>Standard interfaces for interacting with the Axcend Focus LC</description>
   <maintainer email="graham.harrison@axcendcorp.com">ubuntu</maintainer>
   <license>TODO: License declaration</license>
 
