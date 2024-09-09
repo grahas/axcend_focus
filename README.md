@@ -48,6 +48,12 @@ code .
 3. catkin_prepare_release
 4. bloom-release --rosdistro foxy axcend_focus
 5. https://github.com/grahas/axcend_focus-release.git
+6. y
+7. y
+8. n
+9. n
+10. n
+11. n
 
 https://github.com/grahas/axcend_focus.git
 
@@ -167,6 +173,7 @@ export ENVIRONMENT=development
 export ENVIRONMENT=production
 ros2 launch axcend_focus_launch application_launch.py
 ros2 run axcend_focus_ros2_firmware_bridge firmware_bridge.py
+ros2 run axcend_focus_front_panel_button front_panel_button_controller.py
 
 # Openinging the workspace
 open from the axcend_focus directory that has all the packages as the root of the workspace.

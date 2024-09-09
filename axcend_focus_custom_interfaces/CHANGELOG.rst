@@ -4,6 +4,11 @@ Changelog for package axcend_focus_custom_interfaces
 
 Forthcoming
 -----------
+* Update changelog
+* added new messages
+* updates
+* Contributors: Graham Harrison
+
 * added new messages
 * updates
 * Contributors: Graham Harrison

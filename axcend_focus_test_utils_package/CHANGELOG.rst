@@ -4,6 +4,10 @@ Changelog for package axcend_focus_test_utils_package
 
 Forthcoming
 -----------
+* Update changelog
+* updates
+* Contributors: Graham Harrison
+
 * updates
 * Contributors: Graham Harrison
 

@@ -4,6 +4,11 @@ Changelog for package axcend_focus_ros2_firmware_bridge
 
 Forthcoming
 -----------
+* Update changelog
+* updates
+* updates
+* Contributors: Graham Harrison
+
 * updates
 * updates
 * Contributors: Graham Harrison

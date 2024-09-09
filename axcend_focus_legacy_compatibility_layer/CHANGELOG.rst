@@ -4,6 +4,11 @@ Changelog for package axcend_focus_legacy_compatibility_layer
 
 Forthcoming
 -----------
+* Update changelog
+* added new messages
+* updates
+* Contributors: Graham Harrison
+
 * added new messages
 * updates
 * Contributors: Graham Harrison
