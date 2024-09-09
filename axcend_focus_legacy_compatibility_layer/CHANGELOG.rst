@@ -2,8 +2,8 @@
 Changelog for package axcend_focus_legacy_compatibility_layer
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+3.1.5 (2024-09-09)
+------------------
 * Update changelog
 * added new messages
 * updates

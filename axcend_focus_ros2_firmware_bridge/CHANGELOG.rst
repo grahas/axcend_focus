@@ -2,8 +2,8 @@
 Changelog for package axcend_focus_ros2_firmware_bridge
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+3.1.5 (2024-09-09)
+------------------
 * Update changelog
 * updates
 * updates
