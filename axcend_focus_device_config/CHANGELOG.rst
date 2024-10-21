@@ -2,8 +2,8 @@
 Changelog for package axcend_focus_device_config
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+3.1.8 (2024-10-21)
+------------------
 * fix path
 * Contributors: Graham Harrison
 
