@@ -2,8 +2,8 @@
 Changelog for package axcend_focus_test_utils_package
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+3.1.7 (2024-10-21)
+------------------
 * add dependencies
 * Contributors: Graham Harrison
 
