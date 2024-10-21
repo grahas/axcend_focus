@@ -10,8 +10,10 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name, ['system_parameter_template.json']),
-        ('share/' + package_name, ['config.yaml']),
+        ('share/' + package_name + '/config', [
+            'axcend_focus_device_config/config/config.yaml',
+            'axcend_focus_device_config/config/system_parameter_template.json'
+        ]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
