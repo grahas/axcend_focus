@@ -4,6 +4,10 @@ Changelog for package axcend_focus_launch
 
 Forthcoming
 -----------
+* update changelog
+* updates
+* Contributors: Graham Harrison
+
 * updates
 * Contributors: Graham Harrison
 
