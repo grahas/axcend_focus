@@ -2,6 +2,9 @@
 Changelog for package axcend_focus_custom_interfaces
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+
 3.1.7 (2024-10-21)
 ------------------
 
