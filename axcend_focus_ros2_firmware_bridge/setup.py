@@ -12,7 +12,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
     ],
-    install_requires=["setuptools", "pyserial", "scipy", "numpy", "pandas"],
+    install_requires=["setuptools", "pyserial"],
     extras_require={
         "debug": ["debugpy"],
     },
