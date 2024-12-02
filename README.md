@@ -44,7 +44,7 @@ code .
 3. catkin_prepare_release
 4. y
 5. y
-6. bloom-release --rosdistro foxy axcend_focus
+6. bloom-release --rosdistro humble axcend_focus
 8. https://github.com/grahas/axcend_focus-release.git
 9. y
 10. y
@@ -65,19 +65,19 @@ In build-server VM ->
 0. In the rosdistro workspace in the VM
 1. export ROSDISTRO_INDEX_URL=file:///home/axcend/Documents/GitHub/rosdistro/index-v4.yaml
 2. update the version number in distribution.yaml
-3. cd ~/Documents/GitHub/rosdistro/foxy
-4. rosdistro_build_cache file:///home/axcend/Documents/GitHub/rosdistro/index-v4.yaml foxy
+3. cd ~/Documents/GitHub/rosdistro/humble
+4. rosdistro_build_cache file:///home/axcend/Documents/GitHub/rosdistro/index-v4.yaml humble
 
 ### Generate the Recipe
 
 In build-server VM ->
 0. In the same terminal as before
-1. superflore-gen-oe-recipes --dry-run --ros-distro foxy --only axcend_focus_custom_interfaces axcend_focus_device_config axcend_focus_front_panel_button axcend_focus_launch axcend_focus_legacy_compatibility_layer axcend_focus_operation axcend_focus_ros2_firmware_bridge axcend_focus_test_utils_package --output-repository-path ~/Documents/GitHub/test-meta-ros
+1. superflore-gen-oe-recipes --dry-run --ros-distro humble --only axcend_focus_custom_interfaces axcend_focus_device_config axcend_focus_front_panel_button axcend_focus_launch axcend_focus_legacy_compatibility_layer axcend_focus_operation axcend_focus_ros2_firmware_bridge axcend_focus_test_utils_package --output-repository-path ~/Documents/GitHub/test-meta-ros
 
 
 ### Update Existing Recipe
 
-1. rm -r /home/axcend/OSTL-k/layers/meta-ros/meta-ros2-foxy/generated-recipes/axcend-focus && cp -r /home/axcend/Documents/GitHub/test-meta-ros/meta-ros2-foxy/generated-recipes/axcend-focus /home/axcend/OSTL-k/layers/meta-ros/meta-ros2-foxy/generated-recipes/axcend-focus
+1. rm -r /home/axcend/OSTL-k/layers/meta-ros/meta-ros2-humble/generated-recipes/axcend-focus && cp -r /home/axcend/Documents/GitHub/test-meta-ros/meta-ros2-humble/generated-recipes/axcend-focus /home/axcend/OSTL-k/layers/meta-ros/meta-ros2-humble/generated-recipes/axcend-focus
 2. update bbappend version number
 
 ### Bake Changes
@@ -122,6 +122,7 @@ ros2 pkg create --build-type ament_python --node-name system_data_logger axcend_
 ros2 pkg create --build-type ament_python axcend_focus_launch
 ros2 pkg create --build-type ament_python --node-name device_config axcend_focus_device_config
 ros2 pkg create --build-type ament_python --node-name operation axcend_focus_operation
+ros2 pkg create --build-type ament_cmake --license Apache-2.0 --node-name axcend_focus_client axcend_focus_client_library_cpp
 
 ros2 pkg create --build-type ament_cmake --node-name my_node my_package
 
@@ -168,6 +169,8 @@ colcon build --packages-select axcend_focus_legacy_compatibility_layer --symlink
 colcon build --packages-select axcend_focus_launch --symlink-install
 colcon build --packages-select axcend_focus_test_utils --symlink-install
 colcon build --packages-select axcend_focus_device_config --symlink-install
+colcon build --packages-select axcend_focus_client_library_cpp --symlink-install
+
 colcon build --symlink-install
 
 # Launch the nodes
@@ -176,8 +179,9 @@ export ENVIRONMENT=production
 ros2 launch axcend_focus_launch application_launch.py
 ros2 run axcend_focus_ros2_firmware_bridge firmware_bridge.py
 ros2 run axcend_focus_front_panel_button front_panel_button_controller.py
+ros2 run axcend_focus_client_library_cpp axcend_focus_client
 
-# Openinging the workspace
+# Opening the workspace
 open from the axcend_focus directory that has all the packages as the root of the workspace.
 cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws
 source install/setup.bash
@@ -197,56 +201,7 @@ scp -o StrictHostKeyChecking=no /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/
 
 scp -o StrictHostKeyChecking=no /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus/axcend_focus_front_panel_button/axcend_focus_front_panel_button/front_panel_button_controller.py root@192.168.7.1:/home/root/front_panel_button_controller.py
 
-
-
-server {
-    listen 80;
-
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-
-
-
-#!/bin/bash
-
-# Network interface to monitor
-INTERFACE="eth0"
-
-# Threshold of network usage to trigger speed increase, in bytes per second
-THRESHOLD=1000000
-
-# Speeds for the network interface
-SPEED_LOW="10mbit"
-SPEED_HIGH="100mbit"
-
-# Use tc to set the initial speed
-tc qdisc add dev $INTERFACE root handle 1: htb default 11
-tc class add dev $INTERFACE parent 1: classid 1:1 htb rate $SPEED_LOW
-tc class add dev $INTERFACE parent 1:1 classid 1:11 htb rate $SPEED_LOW
-
-while true; do
-    # Get the current network usage
-    RX_BYTES1=$(cat /sys/class/net/$INTERFACE/statistics/rx_bytes)
-    sleep 1
-    RX_BYTES2=$(cat /sys/class/net/$INTERFACE/statistics/rx_bytes)
-
-    # Calculate the bytes per second
-    BPS=$((RX_BYTES2 - RX_BYTES1))
-
-    # Check if the network usage is above the threshold
-    if [ $BPS -gt $THRESHOLD ]; then
-        # Increase the speed
-        tc class change dev $INTERFACE parent 1:1 classid 1:11 htb rate $SPEED_HIGH
-    else
-        # Decrease the speed
-        tc class change dev $INTERFACE parent 1:1 classid 1:11 htb rate $SPEED_LOW
-    fi
-done
+scp -o StrictHostKeyChecking=no /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus/axcend_focus_launch/launch/application_launch.py root@192.168.0.108:/usr/share/axcend_focus_launch/launch/application_launch.py
 
 ## ROS2 commands
 Fill / Empty to a specific location
@@ -280,3 +235,20 @@ Set the board time from the local computer
 ssh root@192.168.7.1 "date --set=\"$(date -u '+%Y-%m-%d %H:%M:%S')\" && hwclock --systohc --utc"
 
 systemctl restart application_launch
+
+./scripts/sstate-cache-management.sh --cache-dir=tmp/sstate-cache --stamps-dir=tmp/stamps --remove-unreferenced
+./scripts/sstate-cache-management.sh --remove-duplicated -d --cache-dir=/home/axcend/OSTL-k/build-openstlinuxweston-stm32mp1/sstate-cache 
+
+
+Getting ROS2 working on windows 11
+C:\Python38\python.exe -m pip install empy==3.3.4
+set RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+add to the power shell file $env:RMW_IMPLEMENTATION='rmw_fastrtps_cpp'
+
+ros2 daemon stop
+ros2 daemon start
+
+$env:VERBOSE = 1
+colcon build --symlink-install --merge-install --event-handlers console_direct+ --cmake-args -DPYTHON_EXECUTABLE='C:\Python38\python.exe' -DPython3_ROOT_DIR='C:\Python38' -DPython3_FIND_STRATEGY=LOCATION -DPython3_FIND_REGISTRY=NEVER --packages-select axcend_focus_client_library_cpp
+
+colcon test --merge-install
