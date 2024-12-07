@@ -23,11 +23,3 @@ namespace axcend_focus_client_library_cpp {
 
 }  // namespace axcend_focus_client_library_cpp
 
-int main(int argc, char* argv[])
-{
-    rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<axcend_focus_client_library_cpp::MinimalSubscriber>());
-    rclcpp::shutdown();
-    return 0;
-}
-

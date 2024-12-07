@@ -4,18 +4,33 @@
 
 ### Setup
 
+### Open the IDE
+This is so that the vscode enviroment process is forked with the correct enviroment variables for the ROS2 workspace and will pass
+it on to any tests or other processes so that intelisense and other stuff works correctly
+
+### Linux
 Open the Ubuntu WSL VM and build server VM
 cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws
 source /opt/ros/humble/setup.bash
-
 source install/setup.bash
+
+### Windows
+Open powershell and run the following commands
+C:\Users\gupyf\Documents\GitHub\ros2_ws\install\setup.ps1
+& "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe" "C:\Users\gupyf\Documents\GitHub\ros2_ws"
+
 
 ### Clean Workspace
 
+### Linux
 1. cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws
 2. rm -r build install log
 3. cd /mnt/c/Users/gupyf/Documents/GitHub/ros2_ws/src/axcend_focus
 4. code .
+
+### Windows
+1. cd C:\Users\gupyf\Documents\GitHub\ros2_ws
+2. Remove-Item -Recurse -Force build, install, log
 
 ### Dependencies
 The code has a dependency that the libaxcend_packet.so is availible on the shared library search path. The library can be compiled by running the make command in the firmware repo and then you can add it to your system. 
@@ -163,6 +178,7 @@ To test without rebuilding in ROS2 you can  use
 colcon build --symlink-install
 
 # Build a specific package
+### Linux:
 colcon build --packages-select axcend_focus_ros2_firmware_bridge --symlink-install
 colcon build --packages-select axcend_focus_custom_interfaces --symlink-install
 colcon build --packages-select axcend_focus_legacy_compatibility_layer --symlink-install
@@ -172,6 +188,9 @@ colcon build --packages-select axcend_focus_device_config --symlink-install
 colcon build --packages-select axcend_focus_client_library_cpp --symlink-install
 
 colcon build --symlink-install
+
+### Windows:
+colcon build  --symlink-install --merge-install --cmake-args -DPYTHON_EXECUTABLE='C:\Python38\python.exe' -DPython3_ROOT_DIR='C:\Python38' -DPython3_FIND_STRATEGY=LOCATION -DPython3_FIND_REGISTRY=NEVER
 
 # Launch the nodes
 export ENVIRONMENT=development
@@ -241,7 +260,6 @@ systemctl restart application_launch
 
 
 Getting ROS2 working on windows 11
-C:\Python38\python.exe -m pip install empy==3.3.4
 set RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 add to the power shell file $env:RMW_IMPLEMENTATION='rmw_fastrtps_cpp'
 
@@ -249,6 +267,77 @@ ros2 daemon stop
 ros2 daemon start
 
 $env:VERBOSE = 1
-colcon build --symlink-install --merge-install --event-handlers console_direct+ --cmake-args -DPYTHON_EXECUTABLE='C:\Python38\python.exe' -DPython3_ROOT_DIR='C:\Python38' -DPython3_FIND_STRATEGY=LOCATION -DPython3_FIND_REGISTRY=NEVER --packages-select axcend_focus_client_library_cpp
+colcon build  --packages-select axcend_focus_client_library_cpp --symlink-install --merge-install --event-handlers console_direct+ --cmake-args -DPYTHON_EXECUTABLE='C:\Python38\python.exe' -DPython3_ROOT_DIR='C:\Python38' -DPython3_FIND_STRATEGY=LOCATION -DPython3_FIND_REGISTRY=NEVER -DCMAKE_BUILD_TYPE=Debug
+colcon build  --symlink-install --merge-install --event-handlers console_direct+ --cmake-args -DPYTHON_EXECUTABLE='C:\Python38\python.exe' -DPython3_ROOT_DIR='C:\Python38' -DPython3_FIND_STRATEGY=LOCATION -DPython3_FIND_REGISTRY=NEVER -DCMAKE_BUILD_TYPE=Debug
 
 colcon test --merge-install
+
+# ROS2 Humble on Windows 11 Visual Studio 2022 notes
+## Issue: 
+Can't run the the local_setup.ps1 file in powershell on startup. Error message is that it is not digitally signed.
+## Solution: 
+Find the file ie C:\dev\ros2_humble_debug\local_setup.ps1 right click->properties->unblock or 
+```powershell
+Unblock-File -Path "C:\dev\ros2_humble_debug\local_setup.ps1"
+Unblock-File -Path "C:\dev\ros2_humble\local_setup.ps1"
+```
+---
+## Issue:
+Visual Studio and other tools are not using the 3.8 python interpreter and using something too new for ROS2
+## Solution:
+Configure visual studio to use the python 3.8 interpreter if newer ones are installed. In the CMakeSettings.json file add the following to the CMake command arguments
+```Cmake
+-DPYTHON_EXECUTABLE='C:\Python38\python.exe' -DPython3_ROOT_DIR='C:\Python38' -DPython3_FIND_STRATEGY=LOCATION -DPython3_FIND_REGISTRY=NEVER
+```
+---
+## Issue:
+ROS2 humble installs the wrong version of the python packages for empy. I think the root of this is that rosdep isn't availible for Windows
+```powershell
+CMake Error at C:/dev/ros2_humble/share/rosidl_adapter/cmake/rosidl_adapt_interfaces.cmake:59 (message):
+...
+ AttributeError processing template 'msg.idl.em'
+
+  Traceback (most recent call last):
+
+    File "C:\dev\ros2_humble\Lib\site-packages\rosidl_adapter\resource\__init__.py", line 51, in evaluate_template
+      em.BUFFERED_OPT: True,
+
+  AttributeError: module 'em' has no attribute 'BUFFERED_OPT'
+```
+## Solution:
+Install the correct version of the python packages. In my case empy 4.2 was installed and I needed 3.3.4.
+```powershell
+C:\Python38\python.exe -m pip install empy==3.3.4
+```
+---
+## Issue: 
+Numpy is having issues when used with the debug version of ROS2
+## Solution:
+
+# Setup ROS2 on Windows 11
+## Build virtual enviroment for ROS2 to avoid conflicts with the system python
+```powershell
+pip install virtualenv
+virtualenv --python="C:\Python38\python.exe" "C:\Users\gupyf\Documents\GitHub\ros2_ws\.venv"
+C:\Users\gupyf\Documents\GitHub\ros2_ws\.venv\Scripts\activate
+```
+
+call C:\dev\ros2_humble\local_setup.bat
+ros2 run demo_nodes_cpp talker
+ros2 run demo_nodes_py listener
+
+cd C:\Users\gupyf\Documents\GitHub\ros2_ws
+.\install\local_setup.ps1
+
+colcon build --merge-install --event-handlers console_direct+ --cmake-args -DPYTHON_EXECUTABLE='C:\Users\gupyf\Documents\GitHub\ros2_ws\.venv\Scripts\python.exe' -DPython3_ROOT_DIR='C:\Users\gupyf\Documents\GitHub\ros2_ws\.venv' -DPython3_FIND_STRATEGY=LOCATION -DPython3_FIND_REGISTRY=NEVER
+
+## Issue:
+Error message: "This version of PyQt5.sip requires Python v3.9 or later"
+## Solution:
+Restrict the version of PyQt5 to 5.15.6
+```powershell
+python -m pip install -U catkin_pkg cryptography empy==3.3.4 importlib-metadata lark==1.1.1 lxml matplotlib netifaces numpy opencv-python PyQt5==5.15.6 pillow psutil pycairo pydot pyparsing==2.4.7 pyyaml rosdistro
+```
+
+
+"%ProgramFiles(x86)%\Microsoft Visual Studio\2019\Community\Common7\Tools\VsDevCmd.bat" -arch=amd64

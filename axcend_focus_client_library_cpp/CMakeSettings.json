@@ -7,7 +7,7 @@
             "inheritEnvironments": [ "msvc_x64_x64" ],
             "buildRoot": "${projectDir}\\out\\build\\${name}",
             "installRoot": "${projectDir}\\out\\install\\${name}",
-            "cmakeCommandArgs": "",
+            "cmakeCommandArgs": "-DPYTHON_EXECUTABLE='C:\\Python38\\python.exe' -DPython3_ROOT_DIR='C:\\Python38' -DPython3_FIND_STRATEGY=LOCATION -DPython3_FIND_REGISTRY=NEVER",
             "buildCommandArgs": "",
             "ctestCommandArgs": ""
         }
